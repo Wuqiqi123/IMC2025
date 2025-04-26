@@ -23,5 +23,6 @@ dependencies:
       - pycolmap==3.11.1
       - transformers==4.51.3
       - h5py==3.13.0
+      - omegaconf==2.3.0
 
       
