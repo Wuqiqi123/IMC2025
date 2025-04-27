@@ -24,6 +24,7 @@ dependencies:
       - transformers==4.51.3
       - h5py==3.13.0
       - omegaconf==2.3.0
+      - networkx==3.4.2
       - plotly
       - ipywidgets
 
