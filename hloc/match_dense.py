@@ -44,6 +44,20 @@ confs = {
         "max_error": 1,  # max error for assigned keypoints (in px)
         "cell_size": 1,  # size of quantization patch (max 1 kp/patch)
     },
+    'gim_dkm': {
+        'output': 'matches-gim-dkm',
+        'model': {
+            'name': 'dkm',
+            'weights': 'gim_dkm_100h.ckpt'
+        },
+        'preprocessing': {
+            'grayscale': False,
+            'resize_max': None,
+            'dfactor': 1
+        },
+        'max_error': 2,  # max error for assigned keypoints (in px)
+        'cell_size': 8,  # size of quantization patch (max 1 kp/patch)
+    },
     # Semi-scalable loftr which limits detected keypoints
     "loftr_aachen": {
         "output": "matches-loftr_aachen",
