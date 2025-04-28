@@ -6,13 +6,9 @@ import gc
 import numpy as np
 import h5py
 import dataclasses
-from dataclasses import dataclass
-from typing import Optional
-
-import pandas as pd
-from collections import defaultdict
 from copy import deepcopy
-from PIL import Image
+import pandas as pd
+import shutil
 
 import cv2
 import torch
@@ -21,15 +17,27 @@ import kornia as K
 import kornia.feature as KF
 
 import torch
-from lightglue import match_pair
-from lightglue import ALIKED, LightGlue
-from lightglue.utils import load_image, rbd
-from transformers import AutoImageProcessor, AutoModel
+from tqdm import tqdm
+from pathlib import Path
+import numpy as np
 
+from hloc import (
+    extract_features,
+    match_features,
+    reconstruction,
+    visualization,
+    pairs_from_exhaustive,
+)
+from hloc.visualization import plot_images, read_image
+from hloc.utils import viz_3d
+from transformers import AutoImageProcessor, AutoModel
 import pycolmap
-from hloc.utils.database import *
-from hloc.utils.h5_to_db import *
+
 import metric
+
+
+device = K.utils.get_cuda_device_if_available(0)
+print(f'{device=}')
 
 
 device = K.utils.get_cuda_device_if_available(0)
@@ -41,6 +49,7 @@ def load_torch_image(fname, device=torch.device('cpu')):
     return img
 
 
+# Must Use efficientnet global descriptor to get matching shortlists.
 def get_global_desc(fnames, device = torch.device('cpu')):
     processor = AutoImageProcessor.from_pretrained('facebook/dinov2-base')
     model = AutoModel.from_pretrained('facebook/dinov2-base')
@@ -59,133 +68,23 @@ def get_global_desc(fnames, device = torch.device('cpu')):
     return global_descs_dinov2
 
 
-def get_img_pairs_exhaustive(img_fnames):
-    index_pairs = []
-    for i in range(len(img_fnames)):
-        for j in range(i+1, len(img_fnames)):
-            index_pairs.append((i,j))
-    return index_pairs
 
-
-def get_image_pairs_shortlist(fnames,
-                              sim_th = 0.6, # should be strict
-                              min_pairs = 30,
-                              exhaustive_if_less = 20,
-                              device=torch.device('cpu')):
-    num_imgs = len(fnames)
-    if num_imgs <= exhaustive_if_less:
-        return get_img_pairs_exhaustive(fnames)
-    descs = get_global_desc(fnames, device=device)
-    dm = torch.cdist(descs, descs, p=2).detach().cpu().numpy()
-    # removing half
-    mask = dm <= sim_th
-    total = 0
-    matching_list = []
-    ar = np.arange(num_imgs)
-    already_there_set = []
-    for st_idx in range(num_imgs-1):
-        mask_idx = mask[st_idx]
-        to_match = ar[mask_idx]
-        # 如果dp中每行代表，当前样本与每列样本的距离，
-        # 如果距离小于sim_th的样本个数小于min_pairs，就直接argsort，并取前min_pairs个元素
-        # 也就是候选匹配项最少也要有min_pairs个
-        if len(to_match) < min_pairs:
-            to_match = np.argsort(dm[st_idx])[:min_pairs]  
-        for idx in to_match:
-            if st_idx == idx: #忽略自身样本的距离
-                continue
-            if dm[st_idx, idx] < 1000:
-                matching_list.append(tuple(sorted((st_idx, idx.item()))))
-                total+=1
-    matching_list = sorted(list(set(matching_list)))
-    return matching_list
-
-def detect_aliked(img_fnames,
-                  feature_dir = '.featureout',
-                  num_features = 4096,
-                  resize_to = 1024,
-                  device=torch.device('cpu')):
-    dtype = torch.float32 # ALIKED has issues with float16
-    extractor = ALIKED(max_num_keypoints=num_features, detection_threshold=0.01, resize=resize_to).eval().to(device, dtype)
-    if not os.path.isdir(feature_dir):
-        os.makedirs(feature_dir)
-    with h5py.File(f'{feature_dir}/keypoints.h5', mode='w') as f_kp, \
-         h5py.File(f'{feature_dir}/descriptors.h5', mode='w') as f_desc:
-        for img_path in tqdm(img_fnames):
-            img_fname = img_path.split('/')[-1]
-            key = img_fname
-            with torch.inference_mode():
-                image0 = load_torch_image(img_path, device=device).to(dtype)
-                feats0 = extractor.extract(image0)  # auto-resize the image, disable with resize=None
-                kpts = feats0['keypoints'].reshape(-1, 2).detach().cpu().numpy()
-                descs = feats0['descriptors'].reshape(len(kpts), -1).detach().cpu().numpy()
-                f_kp[key] = kpts
-                f_desc[key] = descs
-    return
-
-def match_with_lightglue(img_fnames,
-                   index_pairs,
-                   feature_dir = '.featureout',
-                   device=torch.device('cpu'),
-                   min_matches=25,verbose=True):
-    lg_matcher = KF.LightGlueMatcher("aliked", {"width_confidence": -1,
-                                                "depth_confidence": -1,
-                                                 "mp": True if 'cuda' in str(device) else False}).eval().to(device)
-    with h5py.File(f'{feature_dir}/keypoints.h5', mode='r') as f_kp, \
-        h5py.File(f'{feature_dir}/descriptors.h5', mode='r') as f_desc, \
-        h5py.File(f'{feature_dir}/matches.h5', mode='w') as f_match:
-        for pair_idx in tqdm(index_pairs):
-            idx1, idx2 = pair_idx
-            fname1, fname2 = img_fnames[idx1], img_fnames[idx2]
-            key1, key2 = fname1.split('/')[-1], fname2.split('/')[-1]
-            kp1 = torch.from_numpy(f_kp[key1][...]).to(device)
-            kp2 = torch.from_numpy(f_kp[key2][...]).to(device)
-            desc1 = torch.from_numpy(f_desc[key1][...]).to(device)
-            desc2 = torch.from_numpy(f_desc[key2][...]).to(device)
-            with torch.inference_mode():
-                dists, idxs = lg_matcher(desc1,
-                                         desc2,
-                                         KF.laf_from_center_scale_ori(kp1[None]),
-                                         KF.laf_from_center_scale_ori(kp2[None]))
-            if len(idxs)  == 0:
-                continue
-            n_matches = len(idxs)
-            if verbose:
-                print (f'{key1}-{key2}: {n_matches} matches')
-            group  = f_match.require_group(key1)
-            if n_matches >= min_matches:
-                 group.create_dataset(key2, data=idxs.detach().cpu().numpy().reshape(-1, 2))
-    return
-
-def import_into_colmap(img_dir, feature_dir ='.featureout', database_path = 'colmap.db'):
-    db = COLMAPDatabase.connect(database_path)
-    db.create_tables()
-    single_camera = False
-    fname_to_id = add_keypoints(db, feature_dir, img_dir, '', 'simple-pinhole', single_camera)
-    add_matches(
-        db,
-        feature_dir,
-        fname_to_id,
-    )
-    db.commit()
-    return
-
-
-@dataclass
+@dataclasses.dataclass
 class Prediction:
-    image_id: Optional[str]  # A unique identifier for the row -- unused otherwise. Used only on the hidden test set.
+    image_id: str | None  # A unique identifier for the row -- unused otherwise. Used only on the hidden test set.
     dataset: str
     filename: str
-    cluster_index: Optional[int] = None
-    rotation: Optional[np.ndarray] = None
-    translation: Optional[np.ndarray] = None
+    cluster_index: int | None = None
+    rotation: np.ndarray | None = None
+    translation: np.ndarray | None = None
 
 # Set is_train=True to run the notebook on the training data.
 # Set is_train=False if submitting an entry to the competition (test data is hidden, and different from what you see on the "test" folder).
-is_train = False
-data_dir = '/data/imc_data'
-workdir = './result/'
+is_train = True
+data_dir = 'data/image-matching-challenge-2025'
+workdir = 'result/'
 os.makedirs(workdir, exist_ok=True)
+workdir = Path(workdir)
 
 if is_train:
     sample_submission_csv = os.path.join(data_dir, 'train_labels.csv')
@@ -209,10 +108,6 @@ for _, row in competition_data.iterrows():
 for dataset in samples:
     print(f'Dataset "{dataset}" -> num_images={len(samples[dataset])}')
 
-
-
-gc.collect()
-
 max_images = None  # Used For debugging only. Set to None to disable.
 datasets_to_process = None  # Not the best convention, but None means all datasets.
 
@@ -222,10 +117,10 @@ if is_train:
     # Note: When running on the training dataset, the notebook will hit the time limit and die. Use this filter to run on a few specific datasets.
     datasets_to_process = [
     	# New data.
-    	'amy_gardens',
-    	# 'ETs',
+    	# 'amy_gardens',
+    	'ETs',
     	# 'fbk_vineyard',
-    	# 'stairs',
+    	'stairs',
     	# Data from IMC 2023 and 2024.
     	# 'imc2024_dioscuri_baalshamin',
     	# 'imc2023_theather_imc2024_church',
@@ -239,118 +134,64 @@ if is_train:
     	# 'pt_sacrecoeur_trevi_tajmahal',
     ]
 
-timings = {
-    "shortlisting":[],
-    "feature_detection": [],
-    "feature_matching":[],
-    "RANSAC": [],
-    "Reconstruction": [],
-}
-mapping_result_strs = []
-
-
-print (f"Extracting on device {device}")
 for dataset, predictions in samples.items():
     if datasets_to_process and dataset not in datasets_to_process:
         print(f'Skipping "{dataset}"')
         continue
     
     images_dir = os.path.join(data_dir, 'train' if is_train else 'test', dataset)
-    images = [os.path.join(images_dir, p.filename) for p in predictions]
-    if max_images is not None:
-        images = images[:max_images]
+    if not os.path.exists(images_dir):
+        print(f'Images dir "{images_dir}" does not exist. Skipping "{dataset}"')
+        continue
+    
+    images_dir = Path(images_dir)
 
-    print(f'\nProcessing dataset "{dataset}": {len(images)} images')
+    print(f'Images dir: {images_dir}')
+
+    image_names = [p.filename for p in predictions]
+    if max_images is not None:
+        image_names = image_names[:max_images]
+
+    print(f'\nProcessing dataset "{dataset}": {len(image_names)} images')
 
     filename_to_index = {p.filename: idx for idx, p in enumerate(predictions)}
-
-    feature_dir = os.path.join(workdir, 'featureout', dataset)
-    os.makedirs(feature_dir, exist_ok=True)
-
-    # Wrap algos in try-except blocks so we can populate a submission even if one scene crashes.
-    try:
-        t = time()
-        index_pairs = get_image_pairs_shortlist(
-            images,
-            sim_th = 0.3, # should be strict
-            min_pairs = 20, # we should select at least min_pairs PER IMAGE with biggest similarity
-            exhaustive_if_less = 20,
-            device=device
-        )
-        timings['shortlisting'].append(time() - t)
-        print (f'Shortlisting. Number of pairs to match: {len(index_pairs)}. Done in {time() - t:.4f} sec')
-        gc.collect()
     
-        t = time()
+    # rm -rf $workdir/$dataset
+    shutil.rmtree(workdir / dataset)
 
-        detect_aliked(images, feature_dir, 4096, device=device)
-        gc.collect()
-        timings['feature_detection'].append(time() - t)
-        print(f'Features detected in {time() - t:.4f} sec')
-        
-        t = time()
-        match_with_lightglue(images, index_pairs, feature_dir=feature_dir, device=device, verbose=False)
-        timings['feature_matching'].append(time() - t)
-        print(f'Features matched in {time() - t:.4f} sec')
+    sfm_pairs = workdir / dataset / "pairs-sfm.txt"
+    loc_pairs = workdir / dataset / "pairs-loc.txt"
+    sfm_dir = workdir / dataset / "sfm"
+    features = workdir / dataset / "features.h5"
+    matches = workdir / dataset / "matches.h5"
 
-        database_path = os.path.join(feature_dir, 'colmap.db')
-        if os.path.isfile(database_path):
-            os.remove(database_path)
-        gc.collect()
-        sleep(1)
-        import_into_colmap(images_dir, feature_dir=feature_dir, database_path=database_path)
-        output_path = f'{feature_dir}/colmap_rec_aliked'
-        
-        t = time()
-        pycolmap.match_exhaustive(database_path)
-        timings['RANSAC'].append(time() - t)
-        print(f'Ran RANSAC in {time() - t:.4f} sec')
-        
-        # By default colmap does not generate a reconstruction if less than 10 images are registered.
-        # Lower it to 3.
-        mapper_options = pycolmap.IncrementalPipelineOptions()
-        mapper_options.min_model_size = 3
-        mapper_options.max_num_models = 25
-        os.makedirs(output_path, exist_ok=True)
-        t = time()
-        maps = pycolmap.incremental_mapping(
-            database_path=database_path, 
-            image_path=images_dir,
-            output_path=output_path,
-            options=mapper_options)
-        sleep(1)
-        timings['Reconstruction'].append(time() - t)
-        print(f'Reconstruction done in  {time() - t:.4f} sec')
-        print(maps)
+    feature_conf = extract_features.confs["disk"]
+    matcher_conf = match_features.confs["disk+lightglue"]
 
-        clear_output(wait=False)
+    extract_features.main(feature_conf, images_dir, image_list=image_names, feature_path=features)
+    pairs_from_exhaustive.main(sfm_pairs, image_list=image_names)
+    match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
     
-        registered = 0
-        for map_index, cur_map in maps.items():
-            for index, image in cur_map.images.items():
-                prediction_index = filename_to_index[image.name]
-                predictions[prediction_index].cluster_index = map_index
-                predictions[prediction_index].rotation = deepcopy(image.cam_from_world.rotation.matrix())
-                predictions[prediction_index].translation = deepcopy(image.cam_from_world.translation)
-                registered += 1
-        mapping_result_str = f'Dataset "{dataset}" -> Registered {registered} / {len(images)} images with {len(maps)} clusters'
-        mapping_result_strs.append(mapping_result_str)
-        print(mapping_result_str)
-        gc.collect()
-    except Exception as e:
-        print(e)
-        # raise e
-        mapping_result_str = f'Dataset "{dataset}" -> Failed!'
-        mapping_result_strs.append(mapping_result_str)
-        print(mapping_result_str)
+    # # By default colmap does not generate a reconstruction if less than 10 images are registered.
+    # # Lower it to 3.
+    mapper_options = {"min_model_size" : 3, "max_num_models": 25}
+    max_map, maps = reconstruction.main(
+        sfm_dir, images_dir, sfm_pairs, features, matches,
+        image_list=image_names, min_match_score=0.2, mapper_options = mapper_options, 
+    )
+    gc.collect()
+    sleep(1)
 
-print('\nResults')
-for s in mapping_result_strs:
-    print(s)
-
-print('\nTimings')
-for k, v in timings.items():
-    print(f'{k} -> total={sum(v):.02f} sec.')
+    registered = 0
+    for map_index, cur_map in maps.items():
+        for index, image in cur_map.images.items():
+            prediction_index = filename_to_index[image.name]
+            predictions[prediction_index].cluster_index = map_index
+            predictions[prediction_index].rotation = deepcopy(image.cam_from_world.rotation.matrix())
+            predictions[prediction_index].translation = deepcopy(image.cam_from_world.translation)
+            registered += 1
+    mapping_result_str = f'Dataset "{dataset}" -> Registered {registered} / {len(image_names)} images with {len(maps)} clusters'
+    print(mapping_result_str)
 
 
 
@@ -375,9 +216,6 @@ with open(submission_file, 'w') as f:
                 rotation = none_to_str(9) if prediction.rotation is None else array_to_str(prediction.rotation.flatten())
                 translation = none_to_str(3) if prediction.translation is None else array_to_str(prediction.translation)
                 f.write(f'{prediction.image_id},{prediction.dataset},{cluster_name},{prediction.filename},{rotation},{translation}\n')
-
-get_ipython().system('head {submission_file}')
-
 
 
 # Definitely Compute results if running on the training set.

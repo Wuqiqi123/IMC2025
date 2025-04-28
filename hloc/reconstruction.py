@@ -2,7 +2,7 @@ import argparse
 import multiprocessing
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 import pycolmap
 
@@ -66,8 +66,7 @@ def run_reconstruction(
     image_dir: Path,
     verbose: bool = False,
     options: Optional[Dict[str, Any]] = None,
-    return_all_maps: bool = False,
-) -> Union[pycolmap.Reconstruction, dict[int, pycolmap.Reconstruction]]:
+) -> Tuple[pycolmap.Reconstruction, Dict[int, pycolmap.Reconstruction]]:
     models_path = sfm_dir / "models"
     models_path.mkdir(exist_ok=True, parents=True)
     logger.info("Running 3D reconstruction...")
@@ -82,11 +81,8 @@ def run_reconstruction(
 
     if len(reconstructions) == 0:
         logger.error("Could not reconstruct any model!")
-        return None
+        return None, dict()
     logger.info(f"Reconstructed {len(reconstructions)} model(s).")
-
-    if return_all_maps:
-        return reconstructions
 
     largest_index = None
     largest_num_images = 0
@@ -104,7 +100,7 @@ def run_reconstruction(
         if (sfm_dir / filename).exists():
             (sfm_dir / filename).unlink()
         shutil.move(str(models_path / str(largest_index) / filename), str(sfm_dir))
-    return reconstructions[largest_index]
+    return reconstructions[largest_index], reconstructions
 
 
 def main(
@@ -120,8 +116,7 @@ def main(
     image_list: Optional[List[str]] = None,
     image_options: Optional[Dict[str, Any]] = None,
     mapper_options: Optional[Dict[str, Any]] = None,
-    return_all_maps: bool = False,
-) -> pycolmap.Reconstruction:
+) -> Tuple[pycolmap.Reconstruction, Dict[int, pycolmap.Reconstruction]]:
     assert features.exists(), features
     assert pairs.exists(), pairs
     assert matches.exists(), matches
@@ -143,15 +138,15 @@ def main(
     )
     if not skip_geometric_verification:
         estimation_and_geometric_verification(database, pairs, verbose)
-    reconstruction = run_reconstruction(
-        sfm_dir, database, image_dir, verbose, mapper_options, return_all_maps
+    max_reconstruction, reconstructions = run_reconstruction(
+        sfm_dir, database, image_dir, verbose, mapper_options
     )
-    if reconstruction is not None and not isinstance(reconstruction, dict):
+    if max_reconstruction is not None:
         logger.info(
-            f"Reconstruction statistics:\n{reconstruction.summary()}"
+            f"Reconstruction statistics:\n{max_reconstruction.summary()}"
             + f"\n\tnum_input_images = {len(image_ids)}"
         )
-    return reconstruction
+    return max_reconstruction, reconstructions
 
 
 if __name__ == "__main__":
