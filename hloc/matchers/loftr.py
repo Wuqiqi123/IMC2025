@@ -4,7 +4,7 @@ import torch
 from kornia.feature import LoFTR as LoFTR_
 from kornia.feature.loftr.loftr import default_cfg
 
-from networks.loftr.loftr import LoFTR as LoFTR_GIM
+from hloc.networks.loftr.loftr import LoFTR as LoFTR_GIM
 
 from ..utils.base_model import BaseModel
 
