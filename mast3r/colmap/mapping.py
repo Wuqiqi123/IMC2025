@@ -20,14 +20,14 @@ from mast3r.model import AsymmetricMASt3R
 from mast3r.colmap.database import export_matches, get_im_matches
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r_visloc.datasets.utils import get_resize_function
+from dust3r.dust3r_visloc.datasets.utils import get_resize_function
 
 import kapture
 from kapture.converter.colmap.database_extra import get_colmap_camera_ids_from_db, get_colmap_image_ids_from_db
 from kapture.utils.paths import path_secure
 
-from dust3r.datasets.utils.transforms import ImgNorm
-from dust3r.inference import inference
+from dust3r.dust3r.datasets.utils.transforms import ImgNorm
+from dust3r.dust3r.inference import inference
 
 
 def scene_prepare_images(root: str, maxdim: int, patch_size: int, image_paths: List[str]):

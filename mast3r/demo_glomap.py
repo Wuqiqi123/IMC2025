@@ -27,8 +27,8 @@ from mast3r.retrieval.processor import Retriever
 from mast3r.image_pairs import make_pairs
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.utils.image import load_images
-from dust3r.viz import add_scene_cam, CAM_COLORS, OPENGL
+from dust3r.dust3r.utils.image import load_images
+from dust3r.dust3r.viz import add_scene_cam, CAM_COLORS, OPENGL
 from dust3r.demo import get_args_parser as dust3r_get_args_parser
 
 import matplotlib.pyplot as pl

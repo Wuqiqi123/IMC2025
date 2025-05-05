@@ -23,12 +23,12 @@ from mast3r.cloud_opt.utils.schedules import linear_schedule, cosine_schedule
 from mast3r.fast_nn import fast_reciprocal_NNs, merge_corres
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.utils.geometry import inv, geotrf  # noqa
-from dust3r.utils.device import to_cpu, to_numpy, todevice  # noqa
-from dust3r.post_process import estimate_focal_knowing_depth  # noqa
-from dust3r.optim_factory import adjust_learning_rate_by_lr  # noqa
-from dust3r.cloud_opt.base_opt import clean_pointcloud
-from dust3r.viz import SceneViz
+from dust3r.dust3r.utils.geometry import inv, geotrf  # noqa
+from dust3r.dust3r.utils.device import to_cpu, to_numpy, todevice  # noqa
+from dust3r.dust3r.post_process import estimate_focal_knowing_depth  # noqa
+from dust3r.dust3r.optim_factory import adjust_learning_rate_by_lr  # noqa
+from dust3r.dust3r.cloud_opt.base_opt import clean_pointcloud
+from dust3r.dust3r.viz import SceneViz
 
 
 class SparseGA():

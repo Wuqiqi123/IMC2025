@@ -491,7 +491,7 @@ if __name__ == "__main__":
 
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
     import cust3r.utils.path_to_croco
-    from models.pos_embed import get_2d_sincos_pos_embed, RoPE2D
+    from croco.models.pos_embed import get_2d_sincos_pos_embed, RoPE2D
     from functools import partial
     from torch.utils.checkpoint import checkpoint
 

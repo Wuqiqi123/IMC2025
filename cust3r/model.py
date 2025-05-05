@@ -27,7 +27,7 @@ from cust3r.heads import head_factory
 from cust3r.utils.camera import PoseEncoder
 from cust3r.patch_embed import get_patch_embed
 import cust3r.utils.path_to_croco  # noqa: F401
-from models.croco import CroCoNet, CrocoConfig  # noqa
+from croco.models.croco import CroCoNet, CrocoConfig  # noqa
 from cust3r.blocks import (
     Block,
     DecoderBlock,

@@ -2,7 +2,7 @@
 Image Matching Challenge 2025 on Kaggle
 
 ```
-git clone git@github.com:Wuqiqi123/IMC2025.git
+git clone git@github.com:Wuqiqi123/IMC2025.git --depth 1
 cd IMC2025/docker
 docker build -f Dockerfile -t mast3r:dev .
 docker run -it --gpus all -v /YOUR/PATH/IMC2025/:/workspace/IMC2025 --network host --name mast mast3r:dev  /bin/bash
@@ -18,9 +18,9 @@ cd ..
 pip install . 
 cd ..
 
-cd dust3r/croco/models/curope/
+cd croco/models/curope/
 python setup.py build_ext --inplace
-cd ../../../../
+cd ../../../
 ```
 
 

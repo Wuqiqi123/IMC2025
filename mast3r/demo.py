@@ -23,10 +23,10 @@ from mast3r.image_pairs import make_pairs
 from mast3r.retrieval.processor import Retriever
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.utils.image import load_images
-from dust3r.utils.device import to_numpy
-from dust3r.viz import add_scene_cam, CAM_COLORS, OPENGL, pts3d_to_trimesh, cat_meshes
-from dust3r.demo import get_args_parser as dust3r_get_args_parser
+from dust3r.dust3r.utils.image import load_images
+from dust3r.dust3r.utils.device import to_numpy
+from dust3r.dust3r.viz import add_scene_cam, CAM_COLORS, OPENGL, pts3d_to_trimesh, cat_meshes
+from dust3r.dust3r.demo import get_args_parser as dust3r_get_args_parser
 
 import matplotlib.pyplot as pl
 

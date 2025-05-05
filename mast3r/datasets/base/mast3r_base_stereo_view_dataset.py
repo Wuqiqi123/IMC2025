@@ -14,10 +14,10 @@ from mast3r.datasets.utils.cropping import (extract_correspondences_from_pts3d,
                                             gen_random_crops, in2d_rect, crop_to_homography)
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.datasets.base.base_stereo_view_dataset import BaseStereoViewDataset, view_name, is_good_type  # noqa
-from dust3r.datasets.utils.transforms import ImgNorm
-from dust3r.utils.geometry import depthmap_to_absolute_camera_coordinates, geotrf, depthmap_to_camera_coordinates
-import dust3r.datasets.utils.cropping as cropping
+from dust3r.dust3r.datasets.base.base_stereo_view_dataset import BaseStereoViewDataset, view_name, is_good_type  # noqa
+from dust3r.dust3r.datasets.utils.transforms import ImgNorm
+from dust3r.dust3r.utils.geometry import depthmap_to_absolute_camera_coordinates, geotrf, depthmap_to_camera_coordinates
+import dust3r.dust3r.datasets.utils.cropping as cropping
 
 
 class MASt3RBaseStereoViewDataset(BaseStereoViewDataset):

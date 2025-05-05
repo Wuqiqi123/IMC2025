@@ -6,8 +6,8 @@
 # --------------------------------------------------------
 import numpy as np
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.utils.device import to_numpy
-from dust3r.utils.geometry import inv, geotrf
+from dust3r.dust3r.utils.device import to_numpy
+from dust3r.dust3r.utils.geometry import inv, geotrf
 
 
 def reciprocal_1d(corres_1_to_2, corres_2_to_1, ret_recip=False):

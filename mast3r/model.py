@@ -11,8 +11,8 @@ import os
 from mast3r.catmlp_dpt_head import mast3r_head_factory
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.model import AsymmetricCroCo3DStereo  # noqa
-from dust3r.utils.misc import transpose_to_landscape  # noqa
+from dust3r.dust3r.model import AsymmetricCroCo3DStereo  # noqa
+from dust3r.dust3r.utils.misc import transpose_to_landscape  # noqa
 
 
 inf = float('inf')

@@ -10,11 +10,11 @@ import numpy as np
 from sklearn.metrics import average_precision_score
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.losses import BaseCriterion, Criterion, MultiLoss, Sum, ConfLoss
-from dust3r.losses import Regr3D as Regr3D_dust3r
-from dust3r.utils.geometry import (geotrf, inv, normalize_pointcloud)
-from dust3r.inference import get_pred_pts3d
-from dust3r.utils.geometry import get_joint_pointcloud_depth, get_joint_pointcloud_center_scale
+from dust3r.dust3r.losses import BaseCriterion, Criterion, MultiLoss, Sum, ConfLoss
+from dust3r.dust3r.losses import Regr3D as Regr3D_dust3r
+from dust3r.dust3r.utils.geometry import (geotrf, inv, normalize_pointcloud)
+from dust3r.dust3r.inference import get_pred_pts3d
+from dust3r.dust3r.utils.geometry import get_joint_pointcloud_depth, get_joint_pointcloud_center_scale
 
 
 def apply_log_to_norm(xyz):

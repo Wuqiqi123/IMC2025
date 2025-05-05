@@ -9,11 +9,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.heads.postprocess import reg_dense_depth, reg_dense_conf  # noqa
-from dust3r.heads.dpt_head import PixelwiseTaskWithDPT  # noqa
-import dust3r.utils.path_to_croco  # noqa
-from models.blocks import Mlp  # noqa
-from models.dpt_block import Interpolate  # noqa
+from dust3r.dust3r.heads.postprocess import reg_dense_depth, reg_dense_conf  # noqa
+from dust3r.dust3r.heads.dpt_head import PixelwiseTaskWithDPT  # noqa
+import dust3r.dust3r.utils.path_to_croco  # noqa
+from croco.models.blocks import Mlp  # noqa
+from croco.models.dpt_block import Interpolate  # noqa
 
 
 def reg_desc(desc, mode):

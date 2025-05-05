@@ -16,7 +16,7 @@ from cust3r.heads.postprocess import (
     reg_dense_conf,
 )
 import cust3r.utils.path_to_croco  # noqa
-from models.blocks import Mlp  # noqa
+from croco.models.blocks import Mlp  # noqa
 from cust3r.utils.geometry import geotrf
 from cust3r.utils.camera import pose_encoding_to_camera, PoseDecoder
 from cust3r.blocks import ConditionModulationBlock

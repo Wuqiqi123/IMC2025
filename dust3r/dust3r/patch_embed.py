@@ -6,8 +6,8 @@
 # in particular ManyAR_PatchEmbed that Handle images with non-square aspect ratio
 # --------------------------------------------------------
 import torch
-import dust3r.utils.path_to_croco  # noqa: F401
-from models.blocks import PatchEmbed  # noqa
+import dust3r.dust3r.utils.path_to_croco  # noqa: F401
+from croco.models.blocks import PatchEmbed  # noqa
 
 
 def get_patch_embed(patch_embed_cls, img_size, patch_size, enc_embed_dim):
