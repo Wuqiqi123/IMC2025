@@ -15,7 +15,7 @@ from .heads import head_factory
 from .patch_embed import get_patch_embed
 
 # import dust3r.utils.path_to_croco  # noqa: F401
-from croco.models.croco import CroCoNet  # noqa
+from croco.models.croco import CroCoNet, CrocoConfig  # noqa
 
 inf = float('inf')
 
@@ -44,11 +44,7 @@ def load_model(model_path, device, verbose=True):
 
 
 class AsymmetricCroCo3DStereo (
-    CroCoNet,
-    huggingface_hub.PyTorchModelHubMixin,
-    library_name="dust3r",
-    repo_url="https://github.com/naver/dust3r",
-    tags=["image-to-3d"],
+    CroCoNet
 ):
     """ Two siamese encoders, followed by two decoders.
     The goal is to output 3d points directly, both images in view1's frame
@@ -65,8 +61,19 @@ class AsymmetricCroCo3DStereo (
                  patch_embed_cls='PatchEmbedDust3R',  # PatchEmbedDust3R or ManyAR_PatchEmbed
                  **croco_kwargs):
         self.patch_embed_cls = patch_embed_cls
-        self.croco_args = fill_default_args(croco_kwargs, super().__init__)
-        super().__init__(**croco_kwargs)
+        self.croco_args = fill_default_args(croco_kwargs, CrocoConfig.__init__)
+        croco_cfg = CrocoConfig(**self.croco_args)
+        super().__init__(# The `croco_cfg` variable in the `AsymmetricCroCo3DStereo` class is an
+        # instance of the `CrocoConfig` class. It is created by passing the keyword
+        # arguments `croco_kwargs` to the `CrocoConfig` constructor. This
+        # configuration object holds various settings and parameters specific to the
+        # CroCoNet model.
+        # The `croco_cfg` variable in the `AsymmetricCroCo3DStereo` class is an
+        # instance of the `CrocoConfig` class. It is created by passing the keyword
+        # arguments `croco_kwargs` to the `CrocoConfig` constructor. This
+        # configuration object holds various settings and parameters specific to the
+        # CroCoNet model.
+        croco_cfg)
 
         # dust3r specific initialization
         self.dec_blocks2 = deepcopy(self.dec_blocks)
