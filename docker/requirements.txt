@@ -28,3 +28,5 @@ pyglet<2
 huggingface-hub[torch]>=0.2
 accelerate
 cython
+kapture
+kapture-localization
