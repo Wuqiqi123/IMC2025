@@ -8,7 +8,6 @@ import sys
 import os.path as path
 
 HERE_PATH = path.normpath(path.dirname(__file__))
-print( path.normpath(path.join(HERE_PATH, "../../dust3r/croco")))
 CROCO_REPO_PATH = path.normpath(path.join(HERE_PATH, "../../dust3r/croco"))
 CROCO_MODELS_PATH = path.join(CROCO_REPO_PATH, "models")
 
