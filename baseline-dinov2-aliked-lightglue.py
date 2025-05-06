@@ -157,7 +157,8 @@ for dataset, predictions in samples.items():
     filename_to_index = {p.filename: idx for idx, p in enumerate(predictions)}
     
     # rm -rf $workdir/$dataset
-    shutil.rmtree(workdir / dataset)
+    if os.path.exists(workdir / dataset):
+        shutil.rmtree(workdir / dataset)
 
     sfm_pairs = workdir / dataset / "pairs-sfm.txt"
     loc_pairs = workdir / dataset / "pairs-loc.txt"

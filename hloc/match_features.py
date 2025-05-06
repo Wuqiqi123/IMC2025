@@ -145,11 +145,24 @@ def writer_fn(inp, match_path):
         if pair in fd:
             del fd[pair]
         grp = fd.create_group(pair)
-        matches = pred["matches0"][0].cpu().short().numpy()
-        grp.create_dataset("matches0", data=matches)
+        matches0 = pred["matches0"][0].cpu().short().numpy()
+        matches1 = pred["matches1"][0].cpu().short().numpy()
+
+        grp.create_dataset("matches0", data=matches0)
         if "matching_scores0" in pred:
-            scores = pred["matching_scores0"][0].cpu().half().numpy()
-            grp.create_dataset("matching_scores0", data=scores)
+            scores0 = pred["matching_scores0"][0].cpu().numpy()
+            grp.create_dataset("matching_scores0", data=scores0)
+        if "matching_scores1" in pred:
+            scores1 = pred["matching_scores1"][0].cpu().numpy()
+            grp.create_dataset("matching_scores1", data=scores1)
+            
+        if "matches" in pred:
+            matches = pred["matches"][0].cpu().numpy()
+            grp.create_dataset("matches", data=matches)
+            
+        if "scores" in pred:
+            scores = pred["scores"][0].cpu().numpy()
+            grp.create_dataset("scores", data=scores)
 
 
 def main(
