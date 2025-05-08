@@ -14,7 +14,7 @@ from tqdm import tqdm
 from scipy.cluster.hierarchy import DisjointSet
 from scipy.spatial.transform import Rotation as R
 
-from mast3r.utils.misc import hash_md5
+from mast3r.utils.misc import hash_md5, get_path_filename
 
 from mast3r.fast_nn import extract_correspondences_nonsym, bruteforce_reciprocal_nns
 
@@ -181,8 +181,8 @@ def get_im_matches_from_cache(pairs, cache_path, desc_conf, subsample,
         imidx0 = pairs[i][0]['idx']
         imidx1 = pairs[i][1]['idx']
 
-        corres_idx1 = hash_md5(pairs[i][0]['instance'])
-        corres_idx2 = hash_md5(pairs[i][1]['instance'])
+        corres_idx1 = get_path_filename(pairs[i][0]['instance'])
+        corres_idx2 = get_path_filename(pairs[i][1]['instance'])
 
         path_corres = cache_path + f'/corres_conf={desc_conf}_{subsample=}/{corres_idx1}-{corres_idx2}.pth'
         if os.path.isfile(path_corres):

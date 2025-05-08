@@ -17,7 +17,7 @@ from scipy import sparse as sp
 import copy
 import scipy.cluster.hierarchy as sch
 
-from mast3r.utils.misc import mkdir_for, hash_md5
+from mast3r.utils.misc import mkdir_for, hash_md5, get_path_filename
 from mast3r.cloud_opt.utils.losses import gamma_loss
 from mast3r.cloud_opt.utils.schedules import linear_schedule, cosine_schedule
 from mast3r.fast_nn import fast_reciprocal_NNs, merge_corres
@@ -344,6 +344,7 @@ def sparse_scene_optimizer(imgs, subsample, imsizes, pps, base_focals, core_dept
     is_matching_ok = {}
     for s in imgs_slices:
         is_matching_ok[s.img1, s.img2] = matching_check(s.confs)
+        is_matching_ok[s.img2, s.img1] = matching_check(s.confs)
 
     # Prepare slices and corres for losses
     dust3r_slices = [s for s in imgs_slices if not is_matching_ok[s.img1, s.img2]]
@@ -565,8 +566,8 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
     res_paths = {}
 
     for img1, img2 in tqdm(pairs):
-        idx1 = hash_md5(img1['instance'])
-        idx2 = hash_md5(img2['instance'])
+        idx1 = get_path_filename(img1['instance'])
+        idx2 = get_path_filename(img2['instance'])
 
         path1 = cache_path + f'/forward/{idx1}/{idx2}.pth'
         path2 = cache_path + f'/forward/{idx2}/{idx1}.pth'
@@ -599,9 +600,6 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
                 torch.save((matching_score, corres), mkdir_for(path_corres))
 
         res_paths[img1['instance'], img2['instance']] = (path1, path2), path_corres
-
-    del model
-    torch.cuda.empty_cache()
 
     return res_paths, cache_path
 
@@ -678,7 +676,7 @@ def prepare_canonical_data(imgs, tmp_pairs, subsample, order_imgs=False, min_con
 
     for img in tqdm(imgs):
         if cache_path:
-            cache = os.path.join(cache_path, 'canon_views', hash_md5(img) + f'_{subsample=}_{kw=}.pth')
+            cache = os.path.join(cache_path, 'canon_views', get_path_filename(img) + f'_{subsample=}_{kw=}.pth')
             canonical_paths.append(cache)
         try:
             (canon, canon2, cconf), focal = torch.load(cache, map_location=device)
@@ -1003,7 +1001,7 @@ def spectral_projection_of_depthmaps(imgs, intrinsics, depthmaps, subsample, cac
     lora_proj = []
 
     for i, img in enumerate(tqdm(imgs)):
-        cache = os.path.join(cache_path, 'lora_depth', hash_md5(img)) if cache_path else None
+        cache = os.path.join(cache_path, 'lora_depth', get_path_filename(img)) if cache_path else None
         depth, proj = spectral_projection_depth(intrinsics[i], depthmaps[i], subsample,
                                                 cache_path=cache, **kw)
         core_depth.append(depth)
