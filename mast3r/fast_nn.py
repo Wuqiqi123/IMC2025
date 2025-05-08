@@ -39,7 +39,7 @@ def bruteforce_reciprocal_nns(A, B, device='cuda', block_size=None, dist='l2'):
     if block_size is None or len(A) * len(B) <= block_size**2:
         dists = dist_func(A, B)
         _, nn_A = argmin(dists, dim=1)
-        _, nn_B = argmin(dists, dim=0)
+        # _, nn_B = argmin(dists, dim=0)
     else:
         dis_A = torch.full((A.shape[0],), float('inf'), device=device, dtype=A.dtype)
         dis_B = torch.full((B.shape[0],), float('inf'), device=device, dtype=B.dtype)
@@ -66,8 +66,8 @@ def bruteforce_reciprocal_nns(A, B, device='cuda', block_size=None, dist='l2'):
                 nn_A[i * block_size:(i + 1) * block_size][col_mask] = argmin_A_i[col_mask] + (j * block_size)
                 nn_B[j * block_size:(j + 1) * block_size][line_mask] = argmin_B_j[line_mask] + (i * block_size)
     nn_A = nn_A.cpu().numpy()
-    nn_B = nn_B.cpu().numpy()
-    return nn_A, nn_B
+    # nn_B = nn_B.cpu().numpy()
+    return nn_A, nn_A
 
 
 class cdistMatcher:

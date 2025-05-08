@@ -124,3 +124,4 @@ def load_images(folder_or_list, size, square_ok=False, verbose=True):
     if verbose:
         print(f' (Found {len(imgs)} images)')
     return imgs
+

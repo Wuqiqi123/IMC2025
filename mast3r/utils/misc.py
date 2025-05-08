@@ -12,6 +12,8 @@ def mkdir_for(f):
     os.makedirs(os.path.dirname(f), exist_ok=True)
     return f
 
-
 def hash_md5(s):
     return hashlib.md5(s.encode('utf-8')).hexdigest()
+
+def get_path_filename(path_name):
+    return os.path.splitext(os.path.basename(path_name))[0]
