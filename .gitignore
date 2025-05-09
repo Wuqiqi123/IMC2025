@@ -180,3 +180,6 @@ data/image-matching-challenge-2025
 outputs/
 
 ckpts/*.pth
+.vscode/
+*.pkl 
+vis_show_boq/
