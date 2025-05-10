@@ -12,7 +12,8 @@ import torchvision
 from PIL import Image
 import json
 from pathlib import Path
-
+from tqdm import tqdm
+import time
 class VPRModel(torch.nn.Module):
     def __init__(self, 
                  backbone,
@@ -119,7 +120,7 @@ def boq_sort_topk(images_dir, image_list, model, device, k=5, vis=False,  vis_sa
     im_size = (322, 322) # to be used with DinoV2 backbone
     trans = input_transform(im_size)
     features = []
-    for fn in image_list:
+    for fn in tqdm(image_list):
         img = Image.open(os.path.join(images_dir, fn)).convert("RGB")   # 转换为 RGB 模式
 
         img = trans(img)
@@ -129,8 +130,12 @@ def boq_sort_topk(images_dir, image_list, model, device, k=5, vis=False,  vis_sa
         features.append(g_feature)
 
     features = torch.cat(features, dim=0)  # shape [N, D]
-    topk_idx, topk_sim = find_topk_similar(features, k=5)
-    k = min(topk_idx.shape[1], k)
+    start = time.time()
+    topk_idx, topk_sim = find_topk_similar(features, k)
+    end = time.time()
+    print(f'find topk time: {end -start} s')
+
+    # k = min(topk_idx.shape[1], k)
     res = {}
     for i in range(topk_idx.shape[0]):
         res[image_list[i]] = [[topk_sim[i][j].item(), image_list[topk_idx[i][j]]] for j in range(k)]
@@ -153,6 +158,7 @@ def boq_sort_topk(images_dir, image_list, model, device, k=5, vis=False,  vis_sa
     
 if __name__ == '__main__':
     images_dir = '/workspace/work/local/IMC2025/data/image-matching-challenge-2025/train/ETs'
+    images_dir = 'data/image-matching-challenge-2025/train/imc2024_dioscuri_baalshamin'
     image_list = []
     for fn in os.listdir(images_dir):
         if fn.split('.')[-1] in ['png', 'jpg', 'jpeg']:
@@ -163,7 +169,7 @@ if __name__ == '__main__':
     model.eval()
     
     topk_save_path = 'boq_test_topk.json'
-    topks = boq_sort_topk(images_dir, image_list, model, device, vis=True)
+    topks = boq_sort_topk(images_dir, image_list, model, device, vis=False)
     with open(topk_save_path, "w", encoding="utf-8") as f:
         json.dump(topks, f, ensure_ascii=False, indent=4)
     
