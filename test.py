@@ -133,17 +133,22 @@ def get_reconstructed_scene(model, device, filelist,
     if 'boq' in scenegraph_type:
         with open(os.path.join(cache_path, "boq_topk.json"), "r", encoding="utf-8") as f:
             boq_topks = json.load(f)
-    pairs = make_pairs(imgs, imgs_id_dict, scene_graph=scene_graph, prefilter=None, symmetrize=False, sim_mat=sim_matrix, boq_topk_dict=boq_topks)
+    pairs = make_pairs(imgs, scene_graph=scene_graph, prefilter=None, 
+                       symmetrize=False, sim_mat=sim_matrix, boq_topk_dict=boq_topks, 
+                       imgs_id_dict=imgs_id_dict)
     if optim_level == 'coarse':
         niter2 = 0
     # Sparse GA (forward mast3r -> matching -> 3D optim -> 2D refinement -> triangulation)
-    scene = sparse_global_alignment(filelist, pairs, cache_path,
+    scenes, outlier_imgs = sparse_global_alignment(filelist, pairs, cache_path,
                                     model, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
                                     opt_depth='depth' in optim_level, shared_intrinsics=shared_intrinsics,
                                     matching_conf_thr=matching_conf_thr, **kw)
-    trimesh_scene = get_3D_model_from_scene(silent, scene, min_conf_thr, as_pointcloud, mask_sky,
+    trimesh_scenes = []
+    for i, scene in enumerate(scenes):
+        trimesh_scene = get_3D_model_from_scene(silent, scene, min_conf_thr, as_pointcloud, mask_sky,
                                       clean_depth, transparent_cams, cam_size, TSDF_thresh)
-    return trimesh_scene
+        trimesh_scenes.append(trimesh_scene)
+    return trimesh_scenes
 
 
 device = 'cuda:0'
