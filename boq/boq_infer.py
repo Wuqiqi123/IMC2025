@@ -118,7 +118,7 @@ def find_topk_similar(features, k):
     return topk_idx, topk_sim
 
 @torch.no_grad()
-def boq_sort_topk(image_list, model, device, k=20, vis=False,  vis_save_dir='vis_show_boq'):
+def boq_sort_topk(image_list, model, device, topk=20, vis=False,  vis_save_dir='vis_show_boq'):
     # NOTE: when using our models, use the following transform for best results.
     im_size = (322, 322) # to be used with DinoV2 backbone
     trans = input_transform(im_size)
@@ -131,7 +131,7 @@ def boq_sort_topk(image_list, model, device, k=20, vis=False,  vis_save_dir='vis
         g_feature = model(img.unsqueeze(0))[0].detach()  # shape [1, D]
         features.append(g_feature)
 
-    k = min(len(image_list) - 1, k)
+    k = min(len(image_list) - 1, topk)
     features = torch.cat(features, dim=0)  # shape [N, D]
     start = time.time()
     topk_idx, topk_sim = find_topk_similar(features, k)

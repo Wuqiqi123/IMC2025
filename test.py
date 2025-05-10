@@ -97,14 +97,14 @@ def get_reconstructed_scene(model, device, filelist,
                             min_conf_thr = 1.5,
                             matching_conf_thr = 0.0,
                             as_pointcloud = True, mask_sky = False, clean_depth =True, transparent_cams = False, cam_size = 0.2,
-                            scenegraph_type = "boq", winsize=1, win_cyclic=False, refid=0,
+                            scenegraph_type = "complete", winsize=1, win_cyclic=False, refid=0,
                             TSDF_thresh=0.0, shared_intrinsics= False,
                             **kw):
     """
     from a list of images, run mast3r inference, sparse global aligner.
     then run get_3D_model_from_scene
     """
-    imgs, imgs_id_dict = load_images(filelist, size=224, verbose=not silent)
+    imgs, imgs_id_dict = load_images(filelist, size=512, verbose=not silent)
     if len(imgs) == 1:
         imgs = [imgs[0], copy.deepcopy(imgs[0])]
         imgs[1]['idx'] = 1
@@ -129,6 +129,7 @@ def get_reconstructed_scene(model, device, filelist,
         # Cleanup
         del retriever
         torch.cuda.empty_cache()
+    boq_topks = None
     if 'boq' in scenegraph_type:
         with open(os.path.join(cache_path, "boq_topk.json"), "r", encoding="utf-8") as f:
             boq_topks = json.load(f)
@@ -153,13 +154,13 @@ for filename in glob.glob('data/image-matching-challenge-2025/train/ETs/*.png'):
 
 boq_model = get_trained_boq(backbone_name="dinov2", output_dim=12288).to(device)
 boq_model.eval()
-boq_topks = boq_sort_topk(image_list, boq_model, device, vis=False)
+boq_topks = boq_sort_topk(image_list, boq_model, device, vis=False, topk=16)
 
 os.makedirs("outputs/ETs", exist_ok=True)
 with open(os.path.join("outputs/ETs", "boq_topk.json"), "w", encoding="utf-8") as f:
     json.dump(boq_topks, f, ensure_ascii=False, indent=4)
     
-trimesh_scene = get_reconstructed_scene(model, device, image_list, "outputs/ETs")
+trimesh_scene = get_reconstructed_scene(model, device, image_list, "outputs/ETs", scenegraph_type = "boq")
 del model, boq_model
 torch.cuda.empty_cache()
 trimesh_scene.show()
