@@ -3,7 +3,7 @@ import sys
 import os
 
 import torch
-from boq.src.backbones import ResNet, DinoV2
+from backbones import ResNet, DinoV2
 from boq.src.boq import BoQ
 import cv2
 import glob
@@ -16,6 +16,7 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 
+sys.path.insert(0, 'facebookresearch_dinov2_main')
 
 class VPRModel(torch.nn.Module):
     def __init__(self, 
@@ -44,7 +45,8 @@ MODEL_URLS = {
     # "resnet50_4096": "",
 }
 
-def get_trained_boq(backbone_name="resnet50", output_dim=16384):
+def get_trained_boq(backbone_name="resnet50", output_dim=16384, ckpt=None):
+    
     if backbone_name not in AVAILABLE_BACKBONES:
         raise ValueError(f"backbone_name should be one of {list(AVAILABLE_BACKBONES.keys())}")
     try:
@@ -85,10 +87,7 @@ def get_trained_boq(backbone_name="resnet50", output_dim=16384):
         )
     
     vpr_model.load_state_dict(
-        torch.hub.load_state_dict_from_url(
-            MODEL_URLS[f"{backbone_name}_{output_dim}"],
-            map_location=torch.device('cpu')
-        )
+        torch.load(ckpt)
     )
     return vpr_model
 

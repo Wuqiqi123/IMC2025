@@ -9,6 +9,10 @@
 import torch
 import torch.nn as nn
 import torchvision
+import sys
+sys.path.insert(0, 'facebookresearch_dinov2_main')
+from dinov2.hub.backbones import dinov2_vitb14
+
 
 class DinoV2(torch.nn.Module):
     AVAILABLE_MODELS = [
@@ -35,7 +39,8 @@ class DinoV2(torch.nn.Module):
             print(f"Backbone {self.backbone_name} is not recognized!, using dinov2_vitb14")
             self.backbone_name = "dinov2_vitb14"                             
                 
-        self.dino = torch.hub.load('facebookresearch/dinov2', self.backbone_name)
+        # self.dino = torch.hub.load('facebookresearch/dinov2', self.backbone_name)
+        self.dino = dinov2_vitb14(ckpt=None, pretrained=False)
         
         # freeze all parameters
         for param in self.dino.parameters():
