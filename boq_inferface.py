@@ -3,7 +3,7 @@ import sys
 import os
 
 import torch
-from boq.src.backbones import ResNet, DinoV2
+from backbones import ResNet, DinoV2
 from boq.src.boq import BoQ
 import cv2
 import torch
@@ -14,6 +14,8 @@ import json
 from pathlib import Path
 from tqdm import tqdm
 import time
+sys.path.insert(0, 'facebookresearch_dinov2_main')
+
 class VPRModel(torch.nn.Module):
     def __init__(self, 
                  backbone,
@@ -41,7 +43,8 @@ MODEL_URLS = {
     # "resnet50_4096": "",
 }
 
-def get_trained_boq(backbone_name="resnet50", output_dim=16384):
+def get_trained_boq(backbone_name="resnet50", output_dim=16384, ckpt=None):
+    
     if backbone_name not in AVAILABLE_BACKBONES:
         raise ValueError(f"backbone_name should be one of {list(AVAILABLE_BACKBONES.keys())}")
     try:
@@ -82,10 +85,7 @@ def get_trained_boq(backbone_name="resnet50", output_dim=16384):
         )
     
     vpr_model.load_state_dict(
-        torch.hub.load_state_dict_from_url(
-            MODEL_URLS[f"{backbone_name}_{output_dim}"],
-            map_location=torch.device('cpu')
-        )
+        torch.load(ckpt)
     )
     return vpr_model
 
@@ -164,12 +164,12 @@ if __name__ == '__main__':
         if fn.split('.')[-1] in ['png', 'jpg', 'jpeg']:
             image_list.append(fn)
     device = 'cuda:0'
-    model = get_trained_boq(backbone_name="dinov2", output_dim=12288)
+    model = get_trained_boq(backbone_name="dinov2", output_dim=12288, ckpt='ckpts/dinov2_12288.pth')
     model.to(device)
     model.eval()
     
     topk_save_path = 'boq_test_topk.json'
-    topks = boq_sort_topk(images_dir, image_list, model, device, vis=False)
+    topks = boq_sort_topk(images_dir, image_list, model, device, vis=True)
     with open(topk_save_path, "w", encoding="utf-8") as f:
         json.dump(topks, f, ensure_ascii=False, indent=4)
     
