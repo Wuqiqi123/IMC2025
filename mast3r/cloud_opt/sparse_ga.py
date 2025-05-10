@@ -111,6 +111,13 @@ class SparseGA():
 
 
 
+def convert_dust3r_pairs_naming(imgs, pairs_in):
+    for pair_id in range(len(pairs_in)):
+        for i in range(2):
+            pairs_in[pair_id][i]['instance'] = imgs[pairs_in[pair_id][i]['idx']]
+    return pairs_in
+
+
 def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
                                     device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
     # forward pass
@@ -162,14 +169,7 @@ def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsa
         filelist, subsample, imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21, canonical_paths, mst,
         shared_intrinsics=shared_intrinsics, cache_path=cache_path, device=device, dtype=dtype, **kw)
 
-    return SparseGA(filelist, pairs, res_fine or res_coarse, anchors, canonical_paths)
-
-
-def convert_dust3r_pairs_naming(imgs, pairs_in):
-    for pair_id in range(len(pairs_in)):
-        for i in range(2):
-            pairs_in[pair_id][i]['instance'] = imgs[pairs_in[pair_id][i]['idx']]
-    return pairs_in
+    return SparseGA(filelist, pairs_in, res_fine or res_coarse, anchors, canonical_paths)
 
 def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
                             kinematic_mode='hclust-ward', device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
