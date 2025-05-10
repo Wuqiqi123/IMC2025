@@ -6,6 +6,7 @@ import torch
 from boq.src.backbones import ResNet, DinoV2
 from boq.src.boq import BoQ
 import cv2
+import glob
 import torch
 import torchvision.transforms as T
 import torchvision
@@ -14,6 +15,8 @@ import json
 from pathlib import Path
 from tqdm import tqdm
 import time
+
+
 class VPRModel(torch.nn.Module):
     def __init__(self, 
                  backbone,
@@ -99,7 +102,7 @@ def input_transform(image_size):
     
 
 
-def find_topk_similar(features, k=5):
+def find_topk_similar(features, k=20):
     """
     features: Tensor of shape [N, D], must be L2-normalized
     return: topk indices per row, excluding self
@@ -114,19 +117,18 @@ def find_topk_similar(features, k=5):
 
     return topk_idx, topk_sim
 
-def boq_sort_topk(images_dir, image_list, model, device, k=5, vis=False,  vis_save_dir='vis_show_boq'):
-    os.makedirs(vis_save_dir, exist_ok=True)
+@torch.no_grad()
+def boq_sort_topk(image_list, model, device, k=20, vis=False,  vis_save_dir='vis_show_boq'):
     # NOTE: when using our models, use the following transform for best results.
     im_size = (322, 322) # to be used with DinoV2 backbone
     trans = input_transform(im_size)
     features = []
     for fn in tqdm(image_list):
-        img = Image.open(os.path.join(images_dir, fn)).convert("RGB")   # 转换为 RGB 模式
+        img = Image.open(fn).convert("RGB")   # 转换为 RGB 模式
 
         img = trans(img)
         img = img.to(device)
-        with torch.no_grad():
-            g_feature = model(img.unsqueeze(0))[0].detach()  # shape [1, D]
+        g_feature = model(img.unsqueeze(0))[0].detach()  # shape [1, D]
         features.append(g_feature)
 
     features = torch.cat(features, dim=0)  # shape [N, D]
@@ -140,8 +142,9 @@ def boq_sort_topk(images_dir, image_list, model, device, k=5, vis=False,  vis_sa
     for i in range(topk_idx.shape[0]):
         res[image_list[i]] = [[topk_sim[i][j].item(), image_list[topk_idx[i][j]]] for j in range(k)]
         if vis:
-            img_paths = [os.path.join(images_dir, f"{image_list[i]}")]
-            img_paths += [os.path.join(images_dir, f"{image_list[topk_idx[i][j]]}") for j in range(k)]
+            os.makedirs(vis_save_dir, exist_ok=True)
+            img_paths = [f"{image_list[i]}"]
+            img_paths += [f"{image_list[topk_idx[i][j]]}" for j in range(k)]
 
             images = [cv2.imread(p) for p in img_paths if os.path.exists(p)]
             images = [cv2.resize(img, (400, 300)) for img in images]
@@ -149,27 +152,5 @@ def boq_sort_topk(images_dir, image_list, model, device, k=5, vis=False,  vis_sa
             concat = cv2.hconcat(images)
             save_path = os.path.join(vis_save_dir, f"{image_list[i]}_top{k}.jpg")
             cv2.imwrite(save_path, concat)
-    
 
     return res    
-
-
-    
-    
-if __name__ == '__main__':
-    images_dir = '/workspace/work/local/IMC2025/data/image-matching-challenge-2025/train/ETs'
-    images_dir = 'data/image-matching-challenge-2025/train/imc2024_dioscuri_baalshamin'
-    image_list = []
-    for fn in os.listdir(images_dir):
-        if fn.split('.')[-1] in ['png', 'jpg', 'jpeg']:
-            image_list.append(fn)
-    device = 'cuda:0'
-    model = get_trained_boq(backbone_name="dinov2", output_dim=12288)
-    model.to(device)
-    model.eval()
-    
-    topk_save_path = 'boq_test_topk.json'
-    topks = boq_sort_topk(images_dir, image_list, model, device, vis=False)
-    with open(topk_save_path, "w", encoding="utf-8") as f:
-        json.dump(topks, f, ensure_ascii=False, indent=4)
-    

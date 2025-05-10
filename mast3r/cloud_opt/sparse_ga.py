@@ -16,6 +16,7 @@ from functools import lru_cache
 from scipy import sparse as sp
 import copy
 import scipy.cluster.hierarchy as sch
+from matplotlib import pyplot as plt
 
 from mast3r.utils.misc import mkdir_for, hash_md5, get_path_filename
 from mast3r.cloud_opt.utils.losses import gamma_loss
@@ -156,14 +157,26 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
         pws = (pairwise_scores.clone() / max_n_corres).clip(max=1)
         pws.fill_diagonal_(1)
         pws = to_numpy(pws)
-        distance_matrix = np.where(pws, 1 - pws, 2)
+
+        distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10)
+        # distance_matrix.clip(max=10)
+        # distance_matrix[distance_matrix == float('inf')] = 10
 
         # Compute the condensed distance matrix
         condensed_distance_matrix = sch.distance.squareform(distance_matrix)
 
         # Perform hierarchical clustering using the linkage method
-        Z = sch.linkage(condensed_distance_matrix, method=linkage)
-        # dendrogram = sch.dendrogram(Z)
+        Z = sch.linkage(condensed_distance_matrix, method="average")
+        # dendrogram = sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8)
+        clusters = sch.fcluster(Z, t=2.1, criterion='distance')
+        clusters_dict = {}
+        print(f'clusters = {clusters}')
+        for i, cluster in enumerate(clusters):
+            if cluster not in clusters_dict:
+                clusters_dict[cluster] = []
+            clusters_dict[cluster].append(get_path_filename(imgs[i]))
+        print(f'clusters_dict = {clusters_dict}')
+
 
         tree = np.eye(len(imgs))
         new_to_old_nodes = {i:i for i in range(len(imgs))}
