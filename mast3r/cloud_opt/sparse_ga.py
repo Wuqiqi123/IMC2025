@@ -154,13 +154,11 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
         # Convert the affinity matrix to a distance matrix (if needed)
         n_patches = (imsizes // subsample).prod(dim=1)
         max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
-        pws = (pairwise_scores.clone() / max_n_corres).clip(max=1)
+        pws = (pairwise_scores.clone() / max_n_corres).clip(min=np.exp(-10), max=1)
         pws.fill_diagonal_(1)
         pws = to_numpy(pws)
 
-        distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10)
-        # distance_matrix.clip(max=10)
-        # distance_matrix[distance_matrix == float('inf')] = 10
+        distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
 
         # Compute the condensed distance matrix
         condensed_distance_matrix = sch.distance.squareform(distance_matrix)

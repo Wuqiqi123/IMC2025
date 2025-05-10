@@ -102,7 +102,7 @@ def input_transform(image_size):
     
 
 
-def find_topk_similar(features, k=20):
+def find_topk_similar(features, k):
     """
     features: Tensor of shape [N, D], must be L2-normalized
     return: topk indices per row, excluding self
@@ -131,13 +131,12 @@ def boq_sort_topk(image_list, model, device, k=20, vis=False,  vis_save_dir='vis
         g_feature = model(img.unsqueeze(0))[0].detach()  # shape [1, D]
         features.append(g_feature)
 
+    k = min(len(image_list) - 1, k)
     features = torch.cat(features, dim=0)  # shape [N, D]
     start = time.time()
     topk_idx, topk_sim = find_topk_similar(features, k)
     end = time.time()
     print(f'find topk time: {end -start} s')
-
-    # k = min(topk_idx.shape[1], k)
     res = {}
     for i in range(topk_idx.shape[0]):
         res[image_list[i]] = [[topk_sim[i][j].item(), image_list[topk_idx[i][j]]] for j in range(k)]
