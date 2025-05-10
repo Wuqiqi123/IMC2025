@@ -139,7 +139,7 @@ def get_reconstructed_scene(model, device, filelist,
     if optim_level == 'coarse':
         niter2 = 0
     # Sparse GA (forward mast3r -> matching -> 3D optim -> 2D refinement -> triangulation)
-    scenes, outlier_imgs = sparse_global_alignment(filelist, pairs, cache_path,
+    scenes, outlier_imgs = sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs, cache_path,
                                     model, lr1=lr1, niter1=niter1, lr2=lr2, niter2=niter2, device=device,
                                     opt_depth='depth' in optim_level, shared_intrinsics=shared_intrinsics,
                                     matching_conf_thr=matching_conf_thr, **kw)
