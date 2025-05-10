@@ -157,7 +157,7 @@ image_list = []
 for filename in glob.glob('data/image-matching-challenge-2025/train/ETs/*.png'): #assuming gif
     image_list.append(filename)
 
-boq_model = get_trained_boq(backbone_name="dinov2", output_dim=12288).to(device)
+boq_model = get_trained_boq(backbone_name="dinov2", output_dim=12288, ckpt='ckpts/dinov2_12288.pth').to(device)
 boq_model.eval()
 boq_topks = boq_sort_topk(image_list, boq_model, device, vis=False, topk=16)
 
