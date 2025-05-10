@@ -235,11 +235,10 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
             outlier_imgs += image_cluster_dict["names"]
             continue
         
-        image_cluster = image_cluster_dict["imgs"]
         from mast3r.image_pairs import make_pairs
         pairs_cluster = make_pairs(imgs, scene_graph="complete", symmetrize=False)
         
-        ga_scene = sparse_global_alignment_cluster(image_cluster["imgs"], pairs_cluster, cache_path, model,
+        ga_scene = sparse_global_alignment_cluster(image_cluster_dict["imgs"], pairs_cluster, cache_path, model,
                                         subsample=subsample, desc_conf=desc_conf,
                                         device=device, dtype=dtype, shared_intrinsics=shared_intrinsics, **kw)
         sparse_ga_scenes.append(ga_scene)
