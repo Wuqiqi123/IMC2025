@@ -148,7 +148,7 @@ def get_reconstructed_scene(model, device, filelist,
         trimesh_scene = get_3D_model_from_scene(silent, scene, min_conf_thr, as_pointcloud, mask_sky,
                                       clean_depth, transparent_cams, cam_size, TSDF_thresh)
         trimesh_scenes.append(trimesh_scene)
-    return trimesh_scenes
+    return trimesh_scenes, outlier_imgs
 
 
 device = 'cuda:0'
@@ -165,7 +165,7 @@ os.makedirs("outputs/ETs", exist_ok=True)
 with open(os.path.join("outputs/ETs", "boq_topk.json"), "w", encoding="utf-8") as f:
     json.dump(boq_topks, f, ensure_ascii=False, indent=4)
     
-trimesh_scene = get_reconstructed_scene(model, device, image_list, "outputs/ETs", scenegraph_type = "boq")
+trimesh_scenes, outlier_imgs = get_reconstructed_scene(model, device, image_list, "outputs/ETs", scenegraph_type = "boq")
 del model, boq_model
 torch.cuda.empty_cache()
-trimesh_scene.show()
+trimesh_scenes[0].show()

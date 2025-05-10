@@ -110,17 +110,9 @@ class SparseGA():
                             masks=[c > 1 for c in confs])
 
 
-def convert_dust3r_pairs_naming(imgs, pairs_in):
-    for pair_id in range(len(pairs_in)):
-        for i in range(2):
-            pairs_in[pair_id][i]['instance'] = imgs[pairs_in[pair_id][i]['idx']]
-    return pairs_in
-
 
 def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
                                     device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
-    # Convert pair naming convention from dust3r to mast3r
-    pairs_in = convert_dust3r_pairs_naming(filelist, pairs_in)
     # forward pass
     pairs, cache_path = forward_mast3r(pairs_in, model,
                                        cache_path=cache_path, subsample=subsample,
@@ -172,6 +164,12 @@ def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsa
 
     return SparseGA(filelist, pairs, res_fine or res_coarse, anchors, canonical_paths)
 
+
+def convert_dust3r_pairs_naming(imgs, pairs_in):
+    for pair_id in range(len(pairs_in)):
+        for i in range(2):
+            pairs_in[pair_id][i]['instance'] = imgs[pairs_in[pair_id][i]['idx']]
+    return pairs_in
 
 def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
                             kinematic_mode='hclust-ward', device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
@@ -231,16 +229,21 @@ def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, 
         for img_name in image_cluster_dict["names"]:
             print(f'-- {img_name}')
         
-        if len(image_cluster_dict["filelist"]) <= 5:
-            outlier_imgs += image_cluster_dict["names"]
+        if len(image_cluster_dict["filelist"]) < 5:
+            outlier_imgs += image_cluster_dict["filelist"]
             continue
-        
-        from mast3r.image_pairs import make_pairs
         
         imgs_cluster = []
         for image_path in image_cluster_dict["filelist"]:
-            imgs_cluster.append(imgs[imgs_id_dict[image_path]])
+            ref_cluster_image =imgs[imgs_id_dict[image_path]]
+            imgs_cluster.append(dict(
+                img=ref_cluster_image["img"],
+                true_shape=ref_cluster_image["true_shape"],
+                idx=len(imgs_cluster),
+                instance=ref_cluster_image["instance"],
+            ))
 
+        from mast3r.image_pairs import make_pairs
         pairs_cluster = make_pairs(imgs_cluster, scene_graph="complete", symmetrize=False)
         
         ga_scene = sparse_global_alignment_cluster(image_cluster_dict["filelist"], pairs_cluster, cache_path, model,
