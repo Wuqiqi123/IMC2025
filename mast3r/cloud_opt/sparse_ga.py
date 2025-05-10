@@ -143,55 +143,44 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
     imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21 = \
         condense_data(imgs, tmp_pairs, canonical_views, preds_21, dtype)
 
-    # Build kinematic chain
-    if kinematic_mode == 'mst':
-        # compute minimal spanning tree
-        mst = compute_min_spanning_tree(pairwise_scores)
+    # Convert the affinity matrix to a distance matrix (if needed)
+    n_patches = (imsizes // subsample).prod(dim=1)
+    max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
+    pws = (pairwise_scores.clone() / max_n_corres).clip(min=np.exp(-10), max=1)
+    pws.fill_diagonal_(1)
+    pws = to_numpy(pws)
 
-    elif kinematic_mode.startswith('hclust'):
-        mode, linkage = kinematic_mode.split('-')
+    distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
 
-        # Convert the affinity matrix to a distance matrix (if needed)
-        n_patches = (imsizes // subsample).prod(dim=1)
-        max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
-        pws = (pairwise_scores.clone() / max_n_corres).clip(min=np.exp(-10), max=1)
-        pws.fill_diagonal_(1)
-        pws = to_numpy(pws)
+    # Compute the condensed distance matrix
+    condensed_distance_matrix = sch.distance.squareform(distance_matrix)
 
-        distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
-
-        # Compute the condensed distance matrix
-        condensed_distance_matrix = sch.distance.squareform(distance_matrix)
-
-        # Perform hierarchical clustering using the linkage method
-        Z = sch.linkage(condensed_distance_matrix, method="average")
-        # dendrogram = sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8)
-        clusters = sch.fcluster(Z, t=2.1, criterion='distance')
-        clusters_dict = {}
-        print(f'clusters = {clusters}')
-        for i, cluster in enumerate(clusters):
-            if cluster not in clusters_dict:
-                clusters_dict[cluster] = []
-            clusters_dict[cluster].append(get_path_filename(imgs[i]))
-        print(f'clusters_dict = {clusters_dict}')
+    # Perform hierarchical clustering using the linkage method
+    Z = sch.linkage(condensed_distance_matrix, method="average")
+    # dendrogram = sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8)
+    clusters = sch.fcluster(Z, t=2.1, criterion='distance')
+    clusters_dict = {}
+    print(f'clusters = {clusters}')
+    for i, cluster in enumerate(clusters):
+        if cluster not in clusters_dict:
+            clusters_dict[cluster] = []
+        clusters_dict[cluster].append(get_path_filename(imgs[i]))
+    print(f'clusters_dict = {clusters_dict}')
 
 
-        tree = np.eye(len(imgs))
-        new_to_old_nodes = {i:i for i in range(len(imgs))}
-        for i, (a, b) in enumerate(Z[:,:2].astype(int)):
-            # given two nodes to be merged, we choose which one is the best representant
-            a = new_to_old_nodes[a]
-            b = new_to_old_nodes[b]
-            tree[a,b] = tree[b,a] = 1
-            best = a if pws[a].sum() > pws[b].sum() else b
-            new_to_old_nodes[len(imgs)+i] = best
-            pws[best] = np.maximum(pws[a], pws[b]) # update the node
+    tree = np.eye(len(imgs))
+    new_to_old_nodes = {i:i for i in range(len(imgs))}
+    for i, (a, b) in enumerate(Z[:,:2].astype(int)):
+        # given two nodes to be merged, we choose which one is the best representant
+        a = new_to_old_nodes[a]
+        b = new_to_old_nodes[b]
+        tree[a,b] = tree[b,a] = 1
+        best = a if pws[a].sum() > pws[b].sum() else b
+        new_to_old_nodes[len(imgs)+i] = best
+        pws[best] = np.maximum(pws[a], pws[b]) # update the node
 
-        pairwise_scores = torch.from_numpy(tree) # this output just gives 1s for connected edges and zeros for other, i.e. no scores or priority
-        mst = compute_min_spanning_tree(pairwise_scores)
-
-    else:
-        raise ValueError(f'bad {kinematic_mode=}')
+    pairwise_scores = torch.from_numpy(tree) # this output just gives 1s for connected edges and zeros for other, i.e. no scores or priority
+    mst = compute_min_spanning_tree(pairwise_scores)
 
     # remove all edges not in the spanning tree?
     # min_spanning_tree = {(imgs[i],imgs[j]) for i,j in mst[1]}
