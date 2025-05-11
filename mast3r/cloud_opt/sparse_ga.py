@@ -172,7 +172,7 @@ def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsa
     return SparseGA(filelist, pairs_in, res_fine or res_coarse, anchors, canonical_paths)
 
 def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
-                            kinematic_mode='hclust-ward', device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
+                            kinematic_mode='hclust-ward', device='cuda', dtype=torch.float32, shared_intrinsics=False, half=False, **kw):
     """ Sparse alignment with MASt3R
         imgs: list of image paths
         cache_path: path where to dump temporary files (str)
@@ -187,7 +187,7 @@ def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, 
     # forward pass
     pairs, cache_path = forward_mast3r(pairs_in, model,
                                        cache_path=cache_path, subsample=subsample,
-                                       desc_conf=desc_conf, device=device)
+                                       desc_conf=desc_conf, half=half, device=device)
 
     # extract canonical pointmaps
     tmp_pairs, pairwise_scores, canonical_views, canonical_paths, preds_21 = \
@@ -623,7 +623,7 @@ def make_dense_pts3d(intrinsics, cam2w, depthmaps, canonical_paths, subsample, d
 
 @torch.no_grad()
 def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
-                   device='cuda', subsample=8, **matching_kw):
+                   device='cuda', subsample=8, half=False, **matching_kw):
     res_paths = {}
 
     for img1, img2 in tqdm(pairs):
@@ -642,7 +642,7 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
         if not all(os.path.isfile(p) for p in (path1, path2, path_corres)):
             if model is None:
                 continue
-            res = symmetric_inference(model, img1, img2, device=device)
+            res = symmetric_inference(model, img1, img2, device=device, half=half)
             X11, X21, X22, X12 = [r['pts3d'][0] for r in res]
             C11, C21, C22, C12 = [r['conf'][0] for r in res]
             descs = [r['desc'][0] for r in res]
@@ -665,26 +665,30 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
     return res_paths, cache_path
 
 
-def symmetric_inference(model, img1, img2, device):
+def symmetric_inference(model, img1, img2, device, half=False):
     shape1 = torch.from_numpy(img1['true_shape']).to(device, non_blocking=True)
     shape2 = torch.from_numpy(img2['true_shape']).to(device, non_blocking=True)
-    img1 = img1['img'].to(device, non_blocking=True)
-    img2 = img2['img'].to(device, non_blocking=True)
+    if half:
+        img1 = img1['img'].half().to(device, non_blocking=True)
+        img2 = img2['img'].half().to(device, non_blocking=True)
+    else:
+        img1 = img1['img'].to(device, non_blocking=True)
+        img2 = img2['img'].to(device, non_blocking=True)
 
     # compute encoder only once
     feat1, feat2, pos1, pos2 = model._encode_image_pairs(img1, img2, shape1, shape2)
 
-    def decoder(feat1, feat2, pos1, pos2, shape1, shape2):
+    def decoder(feat1, feat2, pos1, pos2, shape1, shape2, half=False):
         dec1, dec2 = model._decoder(feat1, pos1, feat2, pos2)
         with torch.cuda.amp.autocast(enabled=False):
-            res1 = model._downstream_head(1, [tok.float() for tok in dec1], shape1)
-            res2 = model._downstream_head(2, [tok.float() for tok in dec2], shape2)
+            res1 = model._downstream_head(1, [tok.float().half() if half else tok.float() for tok in dec1], shape1)
+            res2 = model._downstream_head(2, [tok.float().half() if half else tok.float() for tok in dec2], shape2)
         return res1, res2
 
     # decoder 1-2
-    res11, res21 = decoder(feat1, feat2, pos1, pos2, shape1, shape2)
+    res11, res21 = decoder(feat1, feat2, pos1, pos2, shape1, shape2, half=half)
     # decoder 2-1
-    res22, res12 = decoder(feat2, feat1, pos2, pos1, shape2, shape1)
+    res22, res12 = decoder(feat2, feat1, pos2, pos1, shape2, shape1, half=half)
 
     return (res11, res21, res22, res12)
 
