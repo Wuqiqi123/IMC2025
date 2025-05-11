@@ -8,12 +8,23 @@ import numpy as np
 import torch
 from mast3r.retrieval.graph import make_pairs_fps
 
-def make_pairs(imgs, scene_graph='complete', prefilter=None, symmetrize=True, sim_mat=None):
+def make_pairs(imgs, scene_graph='complete', prefilter=None, symmetrize=True, sim_mat=None, boq_topk_dict=None, 
+               imgs_id_dict=None):
     pairs = []
     if scene_graph == 'complete':  # complete graph
         for i in range(len(imgs)):
             for j in range(i):
                 pairs.append((imgs[i], imgs[j]))
+    elif scene_graph == 'boq':
+        assert boq_topk_dict is not None, "boq_topks is required for boq mode"
+        pairs_name = []
+        for query, topk in boq_topk_dict.items():
+            ## remove same image pairs
+            for top in topk:
+                database = top[1] ## image name
+                if (query, database) not in pairs and (database, query) not in pairs_name:
+                    pairs.append((imgs[imgs_id_dict[query]], imgs[imgs_id_dict[database]]))
+                    pairs_name.append((query, database))
     elif scene_graph.startswith('swin'):
         iscyclic = not scene_graph.endswith('noncyclic')
         try:

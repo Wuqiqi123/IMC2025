@@ -16,6 +16,7 @@ from functools import lru_cache
 from scipy import sparse as sp
 import copy
 import scipy.cluster.hierarchy as sch
+from matplotlib import pyplot as plt
 
 from mast3r.utils.misc import mkdir_for, hash_md5, get_path_filename
 from mast3r.cloud_opt.utils.losses import gamma_loss
@@ -109,6 +110,7 @@ class SparseGA():
                             masks=[c > 1 for c in confs])
 
 
+
 def convert_dust3r_pairs_naming(imgs, pairs_in):
     for pair_id in range(len(pairs_in)):
         for i in range(2):
@@ -116,7 +118,60 @@ def convert_dust3r_pairs_naming(imgs, pairs_in):
     return pairs_in
 
 
-def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
+def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
+                                    device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
+    # forward pass
+    pairs, cache_path = forward_mast3r(pairs_in, model,
+                                       cache_path=cache_path, subsample=subsample,
+                                       desc_conf=desc_conf, device=device)
+    
+    # extract canonical pointmaps
+    tmp_pairs, pairwise_scores, canonical_views, canonical_paths, preds_21 = \
+        prepare_canonical_data(filelist, pairs, subsample, cache_path=cache_path, mode='avg-angle', device=device)
+
+    # smartly combine all useful data
+    imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21 = \
+        condense_data(filelist, tmp_pairs, canonical_views, preds_21, dtype)
+
+    # Convert the affinity matrix to a distance matrix (if needed)
+    n_patches = (imsizes // subsample).prod(dim=1)
+    max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
+    pws = (pairwise_scores.clone() / max_n_corres).clip(max=1)
+    pws.fill_diagonal_(1)
+    pws = to_numpy(pws)
+    distance_matrix = np.where(pws, 1 - pws, 2)
+    # Compute the condensed distance matrix
+    condensed_distance_matrix = sch.distance.squareform(distance_matrix)
+
+    # Perform hierarchical clustering using the linkage method
+    Z = sch.linkage(condensed_distance_matrix, method="ward")
+    # dendrogram = sch.dendrogram(Z)
+
+    tree = np.eye(len(filelist))
+    new_to_old_nodes = {i:i for i in range(len(filelist))}
+    for i, (a, b) in enumerate(Z[:,:2].astype(int)):
+        # given two nodes to be merged, we choose which one is the best representant
+        a = new_to_old_nodes[a]
+        b = new_to_old_nodes[b]
+        tree[a,b] = tree[b,a] = 1
+        best = a if pws[a].sum() > pws[b].sum() else b
+        new_to_old_nodes[len(filelist)+i] = best
+        pws[best] = np.maximum(pws[a], pws[b]) # update the node
+
+    pairwise_scores = torch.from_numpy(tree) # this output just gives 1s for connected edges and zeros for other, i.e. no scores or priority
+    mst = compute_min_spanning_tree(pairwise_scores)
+
+    # remove all edges not in the spanning tree?
+    # min_spanning_tree = {(imgs[i],imgs[j]) for i,j in mst[1]}
+    # tmp_pairs = {(a,b):v for (a,b),v in tmp_pairs.items() if {(a,b),(b,a)} & min_spanning_tree}
+
+    filelist, res_coarse, res_fine = sparse_scene_optimizer(
+        filelist, subsample, imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21, canonical_paths, mst,
+        shared_intrinsics=shared_intrinsics, cache_path=cache_path, device=device, dtype=dtype, **kw)
+
+    return SparseGA(filelist, pairs_in, res_fine or res_coarse, anchors, canonical_paths)
+
+def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
                             kinematic_mode='hclust-ward', device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
     """ Sparse alignment with MASt3R
         imgs: list of image paths
@@ -128,7 +183,7 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
         lora_depth: smart dimensionality reduction with depthmaps
     """
     # Convert pair naming convention from dust3r to mast3r
-    pairs_in = convert_dust3r_pairs_naming(imgs, pairs_in)
+    pairs_in = convert_dust3r_pairs_naming(filelist, pairs_in)
     # forward pass
     pairs, cache_path = forward_mast3r(pairs_in, model,
                                        cache_path=cache_path, subsample=subsample,
@@ -136,61 +191,67 @@ def sparse_global_alignment(imgs, pairs_in, cache_path, model, subsample=8, desc
 
     # extract canonical pointmaps
     tmp_pairs, pairwise_scores, canonical_views, canonical_paths, preds_21 = \
-        prepare_canonical_data(imgs, pairs, subsample, cache_path=cache_path, mode='avg-angle', device=device)
+        prepare_canonical_data(filelist, pairs, subsample, cache_path=cache_path, mode='avg-angle', device=device)
 
     # smartly combine all useful data
     imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21 = \
-        condense_data(imgs, tmp_pairs, canonical_views, preds_21, dtype)
+        condense_data(filelist, tmp_pairs, canonical_views, preds_21, dtype)
 
-    # Build kinematic chain
-    if kinematic_mode == 'mst':
-        # compute minimal spanning tree
-        mst = compute_min_spanning_tree(pairwise_scores)
+    # Convert the affinity matrix to a distance matrix (if needed)
+    n_patches = (imsizes // subsample).prod(dim=1)
+    max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
+    pws = (pairwise_scores.clone() / max_n_corres).clip(min=np.exp(-10), max=1)
+    pws.fill_diagonal_(1)
+    pws = to_numpy(pws)
 
-    elif kinematic_mode.startswith('hclust'):
-        mode, linkage = kinematic_mode.split('-')
+    distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
 
-        # Convert the affinity matrix to a distance matrix (if needed)
-        n_patches = (imsizes // subsample).prod(dim=1)
-        max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
-        pws = (pairwise_scores.clone() / max_n_corres).clip(max=1)
-        pws.fill_diagonal_(1)
-        pws = to_numpy(pws)
-        distance_matrix = np.where(pws, 1 - pws, 2)
+    # Compute the condensed distance matrix
+    condensed_distance_matrix = sch.distance.squareform(distance_matrix)
 
-        # Compute the condensed distance matrix
-        condensed_distance_matrix = sch.distance.squareform(distance_matrix)
+    # Perform hierarchical clustering using the linkage method
+    Z = sch.linkage(condensed_distance_matrix, method="average")
+    # dendrogram = sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8)
+    clusters = sch.fcluster(Z, t=2.1, criterion='distance')
+    clusters_dict = {}
+    print(f'clusters = {clusters}')
+    for i, cluster in enumerate(clusters):
+        if cluster not in clusters_dict:
+            clusters_dict[cluster] = dict(names=[], filelist=[])
+        clusters_dict[cluster]["names"].append(get_path_filename(filelist[i]))
+        clusters_dict[cluster]["filelist"].append(filelist[i])
+    
 
-        # Perform hierarchical clustering using the linkage method
-        Z = sch.linkage(condensed_distance_matrix, method=linkage)
-        # dendrogram = sch.dendrogram(Z)
+    sparse_ga_scenes = []
+    outlier_imgs = []
+    for cluster_id, image_cluster_dict in clusters_dict.items():
+        print(f'cluster {cluster_id}:')
+        for img_name in image_cluster_dict["names"]:
+            print(f'-- {img_name}')
+        
+        if len(image_cluster_dict["filelist"]) < 5:
+            outlier_imgs += image_cluster_dict["filelist"]
+            continue
+        
+        imgs_cluster = []
+        for image_path in image_cluster_dict["filelist"]:
+            ref_cluster_image =imgs[imgs_id_dict[image_path]]
+            imgs_cluster.append(dict(
+                img=ref_cluster_image["img"],
+                true_shape=ref_cluster_image["true_shape"],
+                idx=len(imgs_cluster),
+                instance=ref_cluster_image["instance"],
+            ))
 
-        tree = np.eye(len(imgs))
-        new_to_old_nodes = {i:i for i in range(len(imgs))}
-        for i, (a, b) in enumerate(Z[:,:2].astype(int)):
-            # given two nodes to be merged, we choose which one is the best representant
-            a = new_to_old_nodes[a]
-            b = new_to_old_nodes[b]
-            tree[a,b] = tree[b,a] = 1
-            best = a if pws[a].sum() > pws[b].sum() else b
-            new_to_old_nodes[len(imgs)+i] = best
-            pws[best] = np.maximum(pws[a], pws[b]) # update the node
+        from mast3r.image_pairs import make_pairs
+        pairs_cluster = make_pairs(imgs_cluster, scene_graph="complete", symmetrize=False)
+        
+        ga_scene = sparse_global_alignment_cluster(image_cluster_dict["filelist"], pairs_cluster, cache_path, model,
+                                        subsample=subsample, desc_conf=desc_conf,
+                                        device=device, dtype=dtype, shared_intrinsics=shared_intrinsics, **kw)
+        sparse_ga_scenes.append(ga_scene)
 
-        pairwise_scores = torch.from_numpy(tree) # this output just gives 1s for connected edges and zeros for other, i.e. no scores or priority
-        mst = compute_min_spanning_tree(pairwise_scores)
-
-    else:
-        raise ValueError(f'bad {kinematic_mode=}')
-
-    # remove all edges not in the spanning tree?
-    # min_spanning_tree = {(imgs[i],imgs[j]) for i,j in mst[1]}
-    # tmp_pairs = {(a,b):v for (a,b),v in tmp_pairs.items() if {(a,b),(b,a)} & min_spanning_tree}
-
-    imgs, res_coarse, res_fine = sparse_scene_optimizer(
-        imgs, subsample, imsizes, pps, base_focals, core_depth, anchors, corres, corres2d, preds_21, canonical_paths, mst,
-        shared_intrinsics=shared_intrinsics, cache_path=cache_path, device=device, dtype=dtype, **kw)
-
-    return SparseGA(imgs, pairs_in, res_fine or res_coarse, anchors, canonical_paths)
+    return sparse_ga_scenes, outlier_imgs
 
 
 def sparse_scene_optimizer(imgs, subsample, imsizes, pps, base_focals, core_depth, anchors, corres, corres2d,

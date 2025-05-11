@@ -93,6 +93,7 @@ def load_images(folder_or_list, size, square_ok=False, verbose=True):
     supported_images_extensions = tuple(supported_images_extensions)
 
     imgs = []
+    imgs_id_dict = {}
     for path in folder_content:
         if not path.lower().endswith(supported_images_extensions):
             continue
@@ -118,6 +119,8 @@ def load_images(folder_or_list, size, square_ok=False, verbose=True):
         W2, H2 = img.size
         if verbose:
             print(f" - adding {path} with resolution {W1}x{H1} --> {W2}x{H2}")
+        
+        imgs_id_dict[path] = len(imgs)
         imgs.append(
             dict(
                 img=ImgNorm(img)[None],
@@ -130,7 +133,7 @@ def load_images(folder_or_list, size, square_ok=False, verbose=True):
     assert imgs, "no images foud at " + root
     if verbose:
         print(f" (Found {len(imgs)} images)")
-    return imgs
+    return imgs, imgs_id_dict
 
 
 def load_images_for_eval(
