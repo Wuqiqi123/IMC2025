@@ -118,12 +118,12 @@ def convert_dust3r_pairs_naming(imgs, pairs_in):
     return pairs_in
 
 
-def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf',
+def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsample=8, desc_conf='desc_conf', half=False,
                                     device='cuda', dtype=torch.float32, shared_intrinsics=False, **kw):
     # forward pass
     pairs, cache_path = forward_mast3r(pairs_in, model,
                                        cache_path=cache_path, subsample=subsample,
-                                       desc_conf=desc_conf, device=device)
+                                       desc_conf=desc_conf, half=half, device=device)
     
     # extract canonical pointmaps
     tmp_pairs, pairwise_scores, canonical_views, canonical_paths, preds_21 = \
@@ -144,7 +144,7 @@ def sparse_global_alignment_cluster(filelist, pairs_in, cache_path, model, subsa
     condensed_distance_matrix = sch.distance.squareform(distance_matrix)
 
     # Perform hierarchical clustering using the linkage method
-    Z = sch.linkage(condensed_distance_matrix, method="ward")
+    Z = sch.linkage(condensed_distance_matrix, method="average")
     # dendrogram = sch.dendrogram(Z)
 
     tree = np.eye(len(filelist))
@@ -212,7 +212,7 @@ def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, 
     # Perform hierarchical clustering using the linkage method
     Z = sch.linkage(condensed_distance_matrix, method="average")
     # dendrogram = sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8)
-    clusters = sch.fcluster(Z, t=2.1, criterion='distance')
+    clusters = sch.fcluster(Z, t=2.6, criterion='distance')
     clusters_dict = {}
     print(f'clusters = {clusters}')
     for i, cluster in enumerate(clusters):
@@ -229,7 +229,7 @@ def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, 
         for img_name in image_cluster_dict["names"]:
             print(f'-- {img_name}')
         
-        if len(image_cluster_dict["filelist"]) < 5:
+        if len(image_cluster_dict["filelist"]) < 8:
             outlier_imgs += image_cluster_dict["filelist"]
             continue
         
@@ -247,7 +247,7 @@ def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, 
         pairs_cluster = make_pairs(imgs_cluster, scene_graph="complete", symmetrize=False)
         
         ga_scene = sparse_global_alignment_cluster(image_cluster_dict["filelist"], pairs_cluster, cache_path, model,
-                                        subsample=subsample, desc_conf=desc_conf,
+                                        subsample=subsample, desc_conf=desc_conf, half=half,
                                         device=device, dtype=dtype, shared_intrinsics=shared_intrinsics, **kw)
         sparse_ga_scenes.append(ga_scene)
 
