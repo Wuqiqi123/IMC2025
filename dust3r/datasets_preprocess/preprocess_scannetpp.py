@@ -21,7 +21,7 @@ import numpy as np
 import cv2
 import PIL.Image as Image
 
-from dust3r.datasets.utils.cropping import rescale_image_depthmap
+from dust3r.dust3r.datasets.utils.cropping import rescale_image_depthmap
 import dust3r.utils.geometry as geometry
 
 inv = np.linalg.inv

@@ -5,7 +5,7 @@
 # AachenDayNight dataloader
 # --------------------------------------------------------
 import os
-from dust3r_visloc.datasets.base_colmap import BaseVislocColmapDataset
+from dust3r.dust3r_visloc.datasets.base_colmap import BaseVislocColmapDataset
 
 
 class VislocAachenDayNight(BaseVislocColmapDataset):

@@ -13,11 +13,11 @@ import math
 
 from dust3r.inference import inference
 from dust3r.model import AsymmetricCroCo3DStereo
-from dust3r.utils.geometry import find_reciprocal_matches, xy_grid, geotrf
+from dust3r.dust3r.utils.geometry import find_reciprocal_matches, xy_grid, geotrf
 
-from dust3r_visloc.datasets import *
-from dust3r_visloc.localization import run_pnp
-from dust3r_visloc.evaluation import get_pose_error, aggregate_stats, export_results
+from dust3r.dust3r_visloc.datasets import *
+from dust3r.dust3r_visloc.localization import run_pnp
+from dust3r.dust3r_visloc.evaluation import get_pose_error, aggregate_stats, export_results
 
 
 def get_args_parser():

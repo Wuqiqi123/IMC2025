@@ -7,7 +7,7 @@
 import numpy as np
 import quaternion
 import torchvision.transforms as tvf
-from dust3r.utils.geometry import geotrf
+from dust3r.dust3r.utils.geometry import geotrf
 
 
 def cam_to_world_from_kapture(kdata, timestamp, camera_id):

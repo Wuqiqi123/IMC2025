@@ -168,7 +168,7 @@ Visit `http://localhost:7860/` to access the web UI (or replace `localhost` with
 ```python
 from dust3r.inference import inference
 from dust3r.model import AsymmetricCroCo3DStereo
-from dust3r.utils.image import load_images
+from dust3r.dust3r.utils.image import load_images
 from dust3r.image_pairs import make_pairs
 from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
@@ -219,7 +219,7 @@ if __name__ == '__main__':
     scene.show()
 
     # find 2D-2D matches between the two images
-    from dust3r.utils.geometry import find_reciprocal_matches, xy_grid
+    from dust3r.dust3r.utils.geometry import find_reciprocal_matches, xy_grid
     pts2d_list, pts3d_list = [], []
     for i in range(2):
         conf_i = confidence_masks[i].cpu().numpy()

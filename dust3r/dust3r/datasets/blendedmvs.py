@@ -9,8 +9,8 @@
 import os.path as osp
 import numpy as np
 
-from dust3r.datasets.base.base_stereo_view_dataset import BaseStereoViewDataset
-from dust3r.utils.image import imread_cv2
+from dust3r.dust3r.datasets.base.base_stereo_view_dataset import BaseStereoViewDataset
+from dust3r.dust3r.utils.image import imread_cv2
 
 
 class BlendedMVS (BaseStereoViewDataset):
@@ -78,9 +78,9 @@ class BlendedMVS (BaseStereoViewDataset):
 
 
 if __name__ == '__main__':
-    from dust3r.datasets.base.base_stereo_view_dataset import view_name
+    from dust3r.dust3r.datasets.base.base_stereo_view_dataset import view_name
     from dust3r.viz import SceneViz, auto_cam_size
-    from dust3r.utils.image import rgb
+    from dust3r.dust3r.utils.image import rgb
 
     dataset = BlendedMVS(split='train', ROOT="data/blendedmvs_processed", resolution=224, aug_crop=16)
 

@@ -27,10 +27,10 @@ import tensorflow.compat.v1 as tf
 tf.enable_eager_execution()
 
 import path_to_root  # noqa
-from dust3r.utils.geometry import geotrf, inv
-from dust3r.utils.image import imread_cv2
-from dust3r.utils.parallel import parallel_processes as parallel_map
-from dust3r.datasets.utils import cropping
+from dust3r.dust3r.utils.geometry import geotrf, inv
+from dust3r.dust3r.utils.image import imread_cv2
+from dust3r.dust3r.utils.parallel import parallel_processes as parallel_map
+from dust3r.dust3r.datasets.utils import cropping
 from dust3r.viz import show_raw_pointcloud
 
 

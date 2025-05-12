@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 
 import path_to_root  # noqa
 import dust3r.datasets.utils.cropping as cropping  # noqa
-from dust3r.utils.image import imread_cv2
+from dust3r.dust3r.utils.image import imread_cv2
 
 
 def get_parser():

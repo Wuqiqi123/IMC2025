@@ -16,8 +16,8 @@ import cv2
 import h5py
 
 import path_to_root  # noqa
-from dust3r.utils.parallel import parallel_threads
-from dust3r.datasets.utils import cropping  # noqa
+from dust3r.dust3r.utils.parallel import parallel_threads
+from dust3r.dust3r.datasets.utils import cropping  # noqa
 
 
 def get_parser():

@@ -9,7 +9,7 @@ import quaternion
 import cv2
 from packaging import version
 
-from dust3r.utils.geometry import opencv_to_colmap_intrinsics
+from dust3r.dust3r.utils.geometry import opencv_to_colmap_intrinsics
 
 try:
     import poselib  # noqa

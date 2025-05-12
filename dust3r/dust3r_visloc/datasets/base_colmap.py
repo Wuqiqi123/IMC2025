@@ -18,10 +18,10 @@ from kapture.core import CameraType
 from kapture.io.csv import kapture_from_dir
 from kapture_localization.utils.pairsfile import get_ordered_pairs_from_file
 
-from dust3r_visloc.datasets.utils import cam_to_world_from_kapture, get_resize_function, rescale_points3d
-from dust3r_visloc.datasets.base_dataset import BaseVislocDataset
-from dust3r.datasets.utils.transforms import ImgNorm
-from dust3r.utils.geometry import colmap_to_opencv_intrinsics
+from dust3r.dust3r_visloc.datasets.utils import cam_to_world_from_kapture, get_resize_function, rescale_points3d
+from dust3r.dust3r_visloc.datasets.base_dataset import BaseVislocDataset
+from dust3r.dust3r.datasets.utils.transforms import ImgNorm
+from dust3r.dust3r.utils.geometry import colmap_to_opencv_intrinsics
 
 KaptureSensor = collections.namedtuple('Sensor', 'sensor_params camera_params')
 

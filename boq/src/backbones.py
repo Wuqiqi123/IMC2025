@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torchvision
 import sys
-sys.path.insert(0, 'facebookresearch_dinov2_main')
+
 from dinov2.hub.backbones import dinov2_vitb14
 
 

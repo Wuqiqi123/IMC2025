@@ -4,14 +4,14 @@
 from .base.mast3r_base_stereo_view_dataset import MASt3RBaseStereoViewDataset
 
 import mast3r.utils.path_to_dust3r  # noqa
-from dust3r.datasets.arkitscenes import ARKitScenes as DUSt3R_ARKitScenes  # noqa
-from dust3r.datasets.blendedmvs import BlendedMVS as DUSt3R_BlendedMVS  # noqa
-from dust3r.datasets.co3d import Co3d as DUSt3R_Co3d  # noqa
-from dust3r.datasets.megadepth import MegaDepth as DUSt3R_MegaDepth  # noqa
-from dust3r.datasets.scannetpp import ScanNetpp as DUSt3R_ScanNetpp  # noqa
-from dust3r.datasets.staticthings3d import StaticThings3D as DUSt3R_StaticThings3D  # noqa
-from dust3r.datasets.waymo import Waymo as DUSt3R_Waymo  # noqa
-from dust3r.datasets.wildrgbd import WildRGBD as DUSt3R_WildRGBD  # noqa
+from dust3r.dust3r.datasets.arkitscenes import ARKitScenes as DUSt3R_ARKitScenes  # noqa
+from dust3r.dust3r.datasets.blendedmvs import BlendedMVS as DUSt3R_BlendedMVS  # noqa
+from dust3r.dust3r.datasets.co3d import Co3d as DUSt3R_Co3d  # noqa
+from dust3r.dust3r.datasets.megadepth import MegaDepth as DUSt3R_MegaDepth  # noqa
+from dust3r.dust3r.datasets.scannetpp import ScanNetpp as DUSt3R_ScanNetpp  # noqa
+from dust3r.dust3r.datasets.staticthings3d import StaticThings3D as DUSt3R_StaticThings3D  # noqa
+from dust3r.dust3r.datasets.waymo import Waymo as DUSt3R_Waymo  # noqa
+from dust3r.dust3r.datasets.wildrgbd import WildRGBD as DUSt3R_WildRGBD  # noqa
 
 
 class ARKitScenes(DUSt3R_ARKitScenes, MASt3RBaseStereoViewDataset):

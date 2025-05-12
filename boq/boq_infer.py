@@ -3,7 +3,7 @@ import sys
 import os
 
 import torch
-from backbones import ResNet, DinoV2
+from boq.src.backbones import ResNet, DinoV2
 from boq.src.boq import BoQ
 import cv2
 import glob
@@ -15,8 +15,6 @@ import json
 from pathlib import Path
 from tqdm import tqdm
 import time
-
-sys.path.insert(0, 'facebookresearch_dinov2_main')
 
 class VPRModel(torch.nn.Module):
     def __init__(self, 

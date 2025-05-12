@@ -11,8 +11,8 @@ import os.path as osp
 import cv2
 import numpy as np
 
-from dust3r.datasets.co3d import Co3d
-from dust3r.utils.image import imread_cv2
+from dust3r.dust3r.datasets.co3d import Co3d
+from dust3r.dust3r.utils.image import imread_cv2
 
 
 class WildRGBD(Co3d):
@@ -41,9 +41,9 @@ class WildRGBD(Co3d):
 
 
 if __name__ == "__main__":
-    from dust3r.datasets.base.base_stereo_view_dataset import view_name
+    from dust3r.dust3r.datasets.base.base_stereo_view_dataset import view_name
     from dust3r.viz import SceneViz, auto_cam_size
-    from dust3r.utils.image import rgb
+    from dust3r.dust3r.utils.image import rgb
 
     dataset = WildRGBD(split='train', ROOT="data/wildrgbd_processed", resolution=224, aug_crop=16)
 
