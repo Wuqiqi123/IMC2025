@@ -29,7 +29,7 @@ from vggt.models.vggt import VGGT
 from vggt.utils.load_fn import load_and_preprocess_images
 from vggt.utils.geometry import closed_form_inverse_se3, unproject_depth_map_to_point_map
 from vggt.utils.pose_enc import pose_encoding_to_extri_intri
-
+import pdb
 
 def viser_wrapper(
     pred_dict: dict,
@@ -363,21 +363,31 @@ def main():
     model.load_state_dict(torch.hub.load_state_dict_from_url(_URL))
 
     model.eval()
-    model = model.to(device)
+
+    # model = model.to(device)
+    
+    model = model.half().to(device)
+
 
     # Use the provided image folder path
     print(f"Loading images from {args.image_folder}...")
     image_names = glob.glob(os.path.join(args.image_folder, "*"))
+    IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp'}
+    image_names = [f for f in image_names if os.path.splitext(f)[1].lower() in IMAGE_EXTENSIONS]
+
     print(f"Found {len(image_names)} images")
 
-    images = load_and_preprocess_images(image_names).to(device)
+    # images = load_and_preprocess_images(image_names).to(device)
+    images = load_and_preprocess_images(image_names).half().to(device)
     print(f"Preprocessed images shape: {images.shape}")
 
     print("Running inference...")    
     dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
 
     with torch.no_grad():
-        with torch.cuda.amp.autocast(dtype=dtype):
+            # pdb.set_trace()
+        with torch.cuda.amp.autocast(enabled=False):
+
             predictions = model(images)
 
     print("Converting pose encoding to extrinsic and intrinsic matrices...")
