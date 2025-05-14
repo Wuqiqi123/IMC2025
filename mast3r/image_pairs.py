@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from mast3r.retrieval.graph import make_pairs_fps
 
-def make_pairs(imgs, scene_graph='complete', prefilter=None, symmetrize=True, sim_mat=None, boq_topk_dict=None, 
+def make_pairs(imgs, scene_graph='complete', image_dir=None, prefilter=None, symmetrize=True, sim_mat=None, boq_topk_dict=None, 
                imgs_id_dict=None):
     pairs = []
     if scene_graph == 'complete':  # complete graph

@@ -218,7 +218,7 @@ def sparse_global_alignment(filelist, imgs, imgs_id_dict, pairs_in, cache_path, 
     for i, cluster in enumerate(clusters):
         if cluster not in clusters_dict:
             clusters_dict[cluster] = dict(names=[], filelist=[])
-        clusters_dict[cluster]["names"].append(get_path_filename(filelist[i]))
+        clusters_dict[cluster]["names"].append(filelist[i])
         clusters_dict[cluster]["filelist"].append(filelist[i])
     
 
@@ -627,8 +627,8 @@ def forward_mast3r(pairs, model, cache_path, desc_conf='desc_conf',
     res_paths = {}
 
     for img1, img2 in tqdm(pairs):
-        idx1 = get_path_filename(img1['instance'])
-        idx2 = get_path_filename(img2['instance'])
+        idx1 = img1['instance']
+        idx2 = img2['instance']
 
         path1 = cache_path + f'/forward/{idx1}/{idx2}.pth'
         path2 = cache_path + f'/forward/{idx2}/{idx1}.pth'
@@ -741,7 +741,7 @@ def prepare_canonical_data(imgs, tmp_pairs, subsample, order_imgs=False, min_con
 
     for img in tqdm(imgs):
         if cache_path:
-            cache = os.path.join(cache_path, 'canon_views', get_path_filename(img) + f'_{subsample=}_{kw=}.pth')
+            cache = os.path.join(cache_path, 'canon_views', img + f'_{subsample=}_{kw=}.pth')
             canonical_paths.append(cache)
         try:
             (canon, canon2, cconf), focal = torch.load(cache, map_location=device)
@@ -1066,7 +1066,7 @@ def spectral_projection_of_depthmaps(imgs, intrinsics, depthmaps, subsample, cac
     lora_proj = []
 
     for i, img in enumerate(tqdm(imgs)):
-        cache = os.path.join(cache_path, 'lora_depth', get_path_filename(img)) if cache_path else None
+        cache = os.path.join(cache_path, 'lora_depth', img) if cache_path else None
         depth, proj = spectral_projection_depth(intrinsics[i], depthmaps[i], subsample,
                                                 cache_path=cache, **kw)
         core_depth.append(depth)

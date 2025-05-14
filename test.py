@@ -7,6 +7,7 @@ import copy
 from scipy.spatial.transform import Rotation
 import tempfile
 import shutil
+import pathlib
 import torch
 import glob
 from mast3r.cloud_opt.sparse_ga import sparse_global_alignment
@@ -83,7 +84,7 @@ def get_3D_model_from_scene(silent, scene, min_conf_thr=2, as_pointcloud=False, 
     
 
 def get_reconstructed_scene(model, device, filelist,
-                            cache_path,
+                            cache_path, image_dir,
                             retrieval_model = None,
                             silent = False,
                             optim_level = "refine+depth",
@@ -98,7 +99,7 @@ def get_reconstructed_scene(model, device, filelist,
     from a list of images, run mast3r inference, sparse global aligner.
     then run get_3D_model_from_scene
     """
-    imgs, imgs_id_dict = load_images(filelist, size=224, verbose=not silent)
+    imgs, imgs_id_dict = load_images(filelist, image_dir, size=224, verbose=not silent)
     if len(imgs) == 1:
         imgs = [imgs[0], copy.deepcopy(imgs[0])]
         imgs[1]['idx'] = 1
@@ -151,10 +152,12 @@ if half:
     model.half().to(device)
 else:
     model.to(device)
-    
-image_list = []
-for filename in glob.glob('data/image-matching-challenge-2025/train/imc2023_haiper/*.png'): #assuming gif
-    image_list.append(filename)
+
+image_dir_name = "imc2023_haiper"
+image_dir = pathlib.Path(f"data/image-matching-challenge-2025/train/{image_dir_name}")
+name_list = []
+for filename in glob.glob(f'data/image-matching-challenge-2025/train/{image_dir_name}/*.png'): #assuming gif
+    name_list.append(filename.split('/')[-1])
 
 boq_model = get_trained_boq(backbone_name="dinov2", output_dim=12288, ckpt='ckpts/dinov2_12288.pth')
 if half:
@@ -163,13 +166,15 @@ else:
     boq_model.to(device)
     
 boq_model.eval()
-boq_topks = boq_sort_topk(image_list, boq_model, device, vis=False, topk=32, half=half)
+boq_topks = boq_sort_topk(image_dir, name_list, boq_model, device, vis=False, topk=32, half=half)
 
-os.makedirs("outputs/imc2023_haiper", exist_ok=True)
-with open(os.path.join("outputs/imc2023_haiper", "boq_topk.json"), "w", encoding="utf-8") as f:
+output_cache = "outputs/imc2023_haiper"
+os.makedirs(output_cache, exist_ok=True)
+with open(os.path.join(output_cache, "boq_topk.json"), "w", encoding="utf-8") as f:
     json.dump(boq_topks, f, ensure_ascii=False, indent=4)
     
-trimesh_scenes, outlier_imgs = get_reconstructed_scene(model, device, image_list, "outputs/imc2023_haiper", scenegraph_type = "boq", half=half)
+trimesh_scenes, outlier_imgs = get_reconstructed_scene(model, device, name_list, 
+                                                       output_cache, image_dir, scenegraph_type = "boq", half=half)
 del model, boq_model
 torch.cuda.empty_cache()
 trimesh_scenes[0].show()
