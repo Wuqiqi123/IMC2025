@@ -240,7 +240,7 @@ class Aggregator(nn.Module):
         global_idx = 0
         output_list = []
 
-        for _ in range(self.aa_block_num):
+        for b_inx in range(self.aa_block_num):
             for attn_type in self.aa_order:
                 if attn_type == "frame":
                     tokens, frame_idx, frame_intermediates = self._process_frame_attention(
@@ -256,7 +256,12 @@ class Aggregator(nn.Module):
             for i in range(len(frame_intermediates)):
                 # concat frame and global intermediates, [B x S x P x 2C]
                 concat_inter = torch.cat([frame_intermediates[i], global_intermediates[i]], dim=-1)
-                output_list.append(concat_inter)
+                if b_inx not in [4,11,17,23]:
+                    output_list.append(None)
+                else:
+                    output_list.append(concat_inter)
+                
+                # output_list.append(concat_inter)
 
         del concat_inter
         del frame_intermediates

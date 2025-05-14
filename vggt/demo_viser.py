@@ -410,15 +410,15 @@ def main():
 
     print("Starting viser visualization...")
 
-    viser_server = viser_wrapper(
-        predictions,
-        port=args.port,
-        init_conf_threshold=args.conf_threshold,
-        use_point_map=args.use_point_map,
-        background_mode=args.background_mode,
-        mask_sky=args.mask_sky,
-        image_folder=args.image_folder,
-    )
+    # viser_server = viser_wrapper(
+    #     predictions,
+    #     port=args.port,
+    #     init_conf_threshold=args.conf_threshold,
+    #     use_point_map=args.use_point_map,
+    #     background_mode=args.background_mode,
+    #     mask_sky=args.mask_sky,
+    #     image_folder=args.image_folder,
+    # )
     print("Visualization complete")
 
 
