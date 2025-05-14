@@ -12,6 +12,10 @@ from pathlib import Path
 import gc
 import shutil
 from copy import deepcopy
+import PIL
+import PIL.Image
+from dust3r.dust3r.datasets.utils.transforms import ImgNorm
+from dust3r.dust3r_visloc.datasets.utils import get_resize_function
 from tqdm import tqdm
 import torch
 import glob
@@ -24,6 +28,7 @@ import json
 import torchvision
 from scipy.cluster.hierarchy import DisjointSet
 from dust3r.dust3r.utils.geometry import geotrf 
+from dust3r.dust3r.utils.device import to_cpu 
 from mast3r.fast_nn import extract_correspondences_nonsym
 from hloc import (
     extract_features,
@@ -34,6 +39,8 @@ from hloc import (
 )
 from hloc.visualization import plot_images, read_image
 from hloc.utils import viz_3d
+from hloc.utils.parsers import names_to_pair, parse_retrieval
+
 
 import pycolmap
 
@@ -155,11 +162,25 @@ def mast_inference(model, img1, img2, device, half=False):
 
     # decoder 1-2
     pred1, pred2 = decoder(feat1, feat2, pos1, pos2, shape1, shape2, half=half)
+    pred1 = to_cpu(pred1)
+    pred2 = to_cpu(pred2)
+    
+    pred1["pts3d"] = pred1["pts3d"].squeeze(0)
+    pred2["pts3d"] = pred2["pts3d"].squeeze(0)
+
+    pred1["conf"] = pred1["conf"].squeeze(0)
+    pred2["conf"] = pred2["conf"].squeeze(0)
+
+    pred1["desc"] = pred1["desc"].squeeze(0)
+    pred2["desc"] = pred2["desc"].squeeze(0)
+
+    pred1["desc_conf"] = pred1["desc_conf"].squeeze(0)
+    pred2["desc_conf"] = pred2["desc_conf"].squeeze(0)
 
     return pred1, pred2
 
 
-def convert_im_matches_pairs(img0, img1, image_to_colmap, im_keypoints, matches_im0, matches_im1, viz):
+def convert_im_matches_pairs(img0, img1, im_keypoints, matches_im0, matches_im1, viz):
     if viz:
         from matplotlib import pyplot as pl
 
@@ -201,8 +222,6 @@ def convert_im_matches_pairs(img0, img1, image_to_colmap, im_keypoints, matches_
 
     matches = [matches_im0.astype(np.float64), matches_im1.astype(np.float64)]
     imgs = [img0, img1]
-    imidx0 = img0['idx']
-    imidx1 = img1['idx']
     ravel_matches = []
     for j in range(2):
         H, W = imgs[j]['true_shape'][0]
@@ -215,41 +234,18 @@ def convert_im_matches_pairs(img0, img1, image_to_colmap, im_keypoints, matches_
             if m not in im_keypoints[imidxj]:
                 im_keypoints[imidxj][m] = 0
             im_keypoints[imidxj][m] += 1
-    imid0 = copy.deepcopy(image_to_colmap[imidx0]['colmap_imid'])
-    imid1 = copy.deepcopy(image_to_colmap[imidx1]['colmap_imid'])
-    if imid0 > imid1:
-        colmap_matches = np.stack([ravel_matches[1], ravel_matches[0]], axis=-1)
-        imid0, imid1 = imid1, imid0
-        imidx0, imidx1 = imidx1, imidx0
-    else:
-        colmap_matches = np.stack([ravel_matches[0], ravel_matches[1]], axis=-1)
-    colmap_matches = np.unique(colmap_matches, axis=0)
-    return imidx0, imidx1, colmap_matches
+    return ravel_matches[0], ravel_matches[1]
 
 
-def get_im_matches(pred1, pred2, pairs, image_to_colmap, im_keypoints, conf_thr,
+def get_im_matches(pred1, pred2, pairs, im_keypoints,
                    subsample=8, pixel_tol=0, viz=False, device='cuda'):
-    im_matches = {}
-    for i in range(len(pred1['pts3d'])):
-        imidx0 = pairs[i][0]['idx']
-        imidx1 = pairs[i][1]['idx']
-        descs = [pred1['desc'][i], pred2['desc'][i]]
-        confidences = [pred1['desc_conf'][i], pred2['desc_conf'][i]]
-        desc_dim = descs[0].shape[-1]
-        corres = extract_correspondences_nonsym(descs[0], descs[1], confidences[0], confidences[1],
-                                                device=device, subsample=subsample, pixel_tol=pixel_tol)
-        conf = corres[2]
-        mask = conf >= conf_thr
-        matches_im0 = corres[0][mask].cpu().numpy()
-        matches_im1 = corres[1][mask].cpu().numpy()
-        if len(matches_im0) == 0:
-            continue
-
-        imidx0, imidx1, colmap_matches = convert_im_matches_pairs(pairs[i][0], pairs[i][1],
-                                                                  image_to_colmap, im_keypoints,
-                                                                  matches_im0, matches_im1, viz)
-        im_matches[(imidx0, imidx1)] = colmap_matches
-    return im_matches
+    corres = extract_correspondences_nonsym(pred1['desc'], pred2['desc'], pred1['desc_conf'], pred2['desc_conf'],
+                                            device=device, subsample=subsample, pixel_tol=pixel_tol)
+    conf = corres[2]
+    matches_im0 = corres[0].cpu().numpy()
+    matches_im1 = corres[1].cpu().numpy()
+    matches = convert_im_matches_pairs(pairs[0], pairs[1], im_keypoints, matches_im0, matches_im1, viz)
+    return matches, conf
 
 
 def export_matches(db, images, image_to_colmap, im_keypoints, im_matches, min_len_track, skip_geometric_verification):
@@ -366,20 +362,46 @@ def export_matches(db, images, image_to_colmap, im_keypoints, im_matches, min_le
                 db.add_two_view_geometry(imid0, imid1, final_matches)
     return colmap_image_pairs
 
+
+def scene_prepare_images(root, maxdim, patch_size, image_paths):
+    images = []
+    image_name_dict = {}
+    # image loading
+    for idx in tqdm(range(len(image_paths))):
+        rgb_image = PIL.Image.open(os.path.join(root, image_paths[idx])).convert('RGB')
+
+        # resize images
+        W, H = rgb_image.size
+        resize_func, _, to_orig = get_resize_function(maxdim, patch_size, H, W)
+        rgb_tensor = resize_func(ImgNorm(rgb_image))
+
+        # image dictionary
+        images.append({'img': rgb_tensor.unsqueeze(0),
+                       'true_shape': np.int32([rgb_tensor.shape[1:]]),
+                       'to_orig': to_orig,
+                       'idx': idx,
+                       'instance': image_paths[idx],
+                       'orig_shape': np.int32([H, W])})
+        image_name_dict[image_paths[idx]] = idx
+    return images, image_name_dict
+
+
 def run_mast_match(mast_model, image_dir, image_names,
-                    device, pairs_path, conf_thr, half, pixel_tol):
-    from dust3r.dust3r.utils.image import load_images
-    filelist = [os.path.join(image_dir, image_name) for image_name in image_names]
-    imgs = load_images(filelist, size=224, verbose=True)
+                  device, pairs_path, conf_thr, half, pixel_tol):
+    images, image_name_dict = scene_prepare_images(image_dir, 512, 16, image_names)
 
     im_keypoints = {idx: {} for idx in range(len(image_names))}
-    image_to_colmap = {}
     pairs = []
+    assert pairs_path.exists(), pairs_path
+    pairs_names = parse_retrieval(pairs_path)
+    pairs_names = [(q, r) for q, rs in pairs_names.items() for r in rs]
+    for i, j in pairs_names:
+        pairs.append((images[image_name_dict[i]], images[image_name_dict[j]]))
+
     for img1, img2 in tqdm(pairs,  desc='Mast inference'):
         pred1, pred2 = mast_inference(mast_model, img1, img2, device, half=half)
-        im_images_chunk = get_im_matches(pred1=pred1, pred2=pred2, pairs=pairs_chunk, image_to_colmap=image_to_colmap,
-                                         im_keypoints=im_keypoints, conf_thr=conf_thr,
-                                         pixel_tol=pixel_tol)
+        matches, conf = get_im_matches(pred1=pred1, pred2=pred2, pairs=(img1, img2), im_keypoints=im_keypoints, pixel_tol=pixel_tol)
+        print("111")
 
 
 for dataset, predictions in samples.items():
@@ -426,7 +448,9 @@ for dataset, predictions in samples.items():
     match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
 
     ## then we use mast
-    
+    run_mast_match(mast_model, images_dir, image_names, device, sfm_pairs, conf_thr=0.1, half=half, pixel_tol=0)
+
+
     # # By default colmap does not generate a reconstruction if less than 10 images are registered.
     # # Lower it to 3.
     mapper_options = {"min_model_size" : 5, "max_num_models": 45}
