@@ -37,7 +37,7 @@ def get_args_parser():
     parser.add_argument("--server_port", type=int, help=("will start gradio app on this port (if available). "
                                                          "If None, will search for an available port starting at 7860."),
                         default=None)
-    parser_weights = parser.add_mutually_exclusive_group(required=True)
+    parser_weights = parser.add_mutually_exclusive_group(required=False)
     parser_weights.add_argument("--weights", type=str, help="path to the model weights", default=None)
     parser_weights.add_argument("--model_name", type=str, help="name of the model weights",
                                 choices=["DUSt3R_ViTLarge_BaseDecoder_512_dpt",

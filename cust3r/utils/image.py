@@ -72,20 +72,9 @@ def _resize_pil_image(img, long_edge_size):
     return img.resize(new_size, interp)
 
 
-def load_images(folder_or_list, size, square_ok=False, verbose=True):
+def load_images(folder_or_list, image_dir, size, square_ok=False, verbose=True):
     """open and convert all images in a list or folder to proper input format for DUSt3R"""
-    if isinstance(folder_or_list, str):
-        if verbose:
-            print(f">> Loading images from {folder_or_list}")
-        root, folder_content = folder_or_list, sorted(os.listdir(folder_or_list))
-
-    elif isinstance(folder_or_list, list):
-        if verbose:
-            print(f">> Loading a list of {len(folder_or_list)} images")
-        root, folder_content = "", folder_or_list
-
-    else:
-        raise ValueError(f"bad {folder_or_list=} ({type(folder_or_list)})")
+    root, folder_content = image_dir, folder_or_list
 
     supported_images_extensions = [".jpg", ".jpeg", ".png", ".bmp"]
     if heif_support_enabled:

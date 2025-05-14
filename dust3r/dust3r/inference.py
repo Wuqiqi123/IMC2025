@@ -28,7 +28,7 @@ def make_batch_symmetric(batch):
     view1, view2 = (_interleave_imgs(view1, view2), _interleave_imgs(view2, view1))
     return view1, view2
 
-
+@torch.no_grad()
 def loss_of_one_batch(batch, model, criterion, device, symmetrize_batch=False, use_amp=False, ret=None):
     view1, view2 = batch
     ignore_keys = set(['depthmap', 'dataset', 'label', 'instance', 'idx', 'true_shape', 'rng'])

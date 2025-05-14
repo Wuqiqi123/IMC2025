@@ -115,13 +115,14 @@ def find_topk_similar(features, k):
     return topk_idx, topk_sim
 
 @torch.no_grad()
-def boq_sort_topk(image_list, model, device, topk=20, vis=False,  vis_save_dir='vis_show_boq', half=False):
+def boq_sort_topk(image_dir, image_names, model, device, topk=20, vis=False,  vis_save_dir='vis_show_boq', half=False):
     # NOTE: when using our models, use the following transform for best results.
     im_size = (322, 322) # to be used with DinoV2 backbone
     trans = input_transform(im_size)
     features = []
-    for fn in tqdm(image_list):
-        img = Image.open(fn).convert("RGB")   # 转换为 RGB 模式
+    for fn in tqdm(image_names):
+
+        img = Image.open(image_dir / fn).convert("RGB")   # 转换为 RGB 模式
 
         img = trans(img)
         if half:
@@ -130,7 +131,7 @@ def boq_sort_topk(image_list, model, device, topk=20, vis=False,  vis_save_dir='
         g_feature = model(img.unsqueeze(0))[0].detach()  # shape [1, D]
         features.append(g_feature)
 
-    k = min(len(image_list) - 1, topk)
+    k = min(len(image_names) - 1, topk)
     features = torch.cat(features, dim=0)  # shape [N, D]
     start = time.time()
     topk_idx, topk_sim = find_topk_similar(features, k)
@@ -138,17 +139,17 @@ def boq_sort_topk(image_list, model, device, topk=20, vis=False,  vis_save_dir='
     print(f'find topk time: {end -start} s')
     res = {}
     for i in range(topk_idx.shape[0]):
-        res[image_list[i]] = [[topk_sim[i][j].item(), image_list[topk_idx[i][j]]] for j in range(k)]
+        res[image_names[i]] = [[topk_sim[i][j].item(), image_names[topk_idx[i][j]]] for j in range(k)]
         if vis:
             os.makedirs(vis_save_dir, exist_ok=True)
-            img_paths = [f"{image_list[i]}"]
-            img_paths += [f"{image_list[topk_idx[i][j]]}" for j in range(k)]
+            img_paths = [f"{image_names[i]}"]
+            img_paths += [f"{image_names[topk_idx[i][j]]}" for j in range(k)]
 
             images = [cv2.imread(p) for p in img_paths if os.path.exists(p)]
             images = [cv2.resize(img, (400, 300)) for img in images]
 
             concat = cv2.hconcat(images)
-            save_path = os.path.join(vis_save_dir, f"{image_list[i]}_top{k}.jpg")
+            save_path = os.path.join(vis_save_dir, f"{image_names[i]}_top{k}.jpg")
             cv2.imwrite(save_path, concat)
 
     return res    
