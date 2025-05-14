@@ -198,27 +198,28 @@ def convert_im_matches_pairs(img0, img1, im_keypoints, matches_im0, matches_im1,
 
         imgs = [rgb0, rgb1]
         # visualize a few matches
-        n_viz = 100
+        n_viz = 50
         num_matches = matches_im0.shape[0]
-        match_idx_to_viz = np.round(np.linspace(
-            0, num_matches - 1, n_viz)).astype(int)
-        viz_matches_im0, viz_matches_im1 = matches_im0[match_idx_to_viz], matches_im1[match_idx_to_viz]
+        if num_matches > 0:
+            match_idx_to_viz = np.round(np.linspace(
+                0, num_matches - 1, n_viz)).astype(int)
+            viz_matches_im0, viz_matches_im1 = matches_im0[match_idx_to_viz], matches_im1[match_idx_to_viz]
 
-        H0, W0, H1, W1 = *imgs[0].shape[:2], *imgs[1].shape[:2]
-        rgb0 = np.pad(imgs[0], ((0, max(H1 - H0, 0)),
-                                (0, 0), (0, 0)), 'constant', constant_values=0)
-        rgb1 = np.pad(imgs[1], ((0, max(H0 - H1, 0)),
-                                (0, 0), (0, 0)), 'constant', constant_values=0)
-        img = np.concatenate((rgb0, rgb1), axis=1)
-        pl.figure()
-        pl.imshow(img)
-        cmap = pl.get_cmap('jet')
-        for ii in range(n_viz):
-            (x0, y0), (x1,
-                       y1) = viz_matches_im0[ii].T, viz_matches_im1[ii].T
-            pl.plot([x0, x1 + W0], [y0, y1], '-+', color=cmap(ii /
-                    (n_viz - 1)), scalex=False, scaley=False)
-        pl.show(block=True)
+            H0, W0, H1, W1 = *imgs[0].shape[:2], *imgs[1].shape[:2]
+            rgb0 = np.pad(imgs[0], ((0, max(H1 - H0, 0)),
+                                    (0, 0), (0, 0)), 'constant', constant_values=0)
+            rgb1 = np.pad(imgs[1], ((0, max(H0 - H1, 0)),
+                                    (0, 0), (0, 0)), 'constant', constant_values=0)
+            img = np.concatenate((rgb0, rgb1), axis=1)
+            pl.figure()
+            pl.imshow(img)
+            cmap = pl.get_cmap('jet')
+            for ii in range(n_viz):
+                (x0, y0), (x1,
+                        y1) = viz_matches_im0[ii].T, viz_matches_im1[ii].T
+                pl.plot([x0, x1 + W0], [y0, y1], '-+', color=cmap(ii /
+                        (n_viz - 1)), scalex=False, scaley=False)
+            pl.show(block=True)
 
     matches = [matches_im0.astype(np.float64), matches_im1.astype(np.float64)]
     imgs = [img0, img1]
@@ -237,13 +238,16 @@ def convert_im_matches_pairs(img0, img1, im_keypoints, matches_im0, matches_im1,
     return ravel_matches[0], ravel_matches[1]
 
 
-def get_im_matches(pred1, pred2, pairs, im_keypoints,
+def get_im_matches(pred1, pred2, pairs, im_keypoints, conf_thr=1.001,
                    subsample=8, pixel_tol=0, viz=False, device='cuda'):
     corres = extract_correspondences_nonsym(pred1['desc'], pred2['desc'], pred1['desc_conf'], pred2['desc_conf'],
                                             device=device, subsample=subsample, pixel_tol=pixel_tol)
     conf = corres[2]
-    matches_im0 = corres[0].cpu().numpy()
-    matches_im1 = corres[1].cpu().numpy()
+    mask = conf >= conf_thr
+    matches_im0 = corres[0][mask].cpu().numpy()
+    matches_im1 = corres[1][mask].cpu().numpy()
+    conf = conf[mask].cpu().numpy()
+
     matches = convert_im_matches_pairs(pairs[0], pairs[1], im_keypoints, matches_im0, matches_im1, viz)
     return matches, conf
 
@@ -387,7 +391,7 @@ def scene_prepare_images(root, maxdim, patch_size, image_paths):
 
 
 def run_mast_match(mast_model, image_dir, image_names,
-                  device, pairs_path, conf_thr, half, pixel_tol):
+                  device, pairs_path, conf_thr = 1.001, half=True, pixel_tol=5):
     images, image_name_dict = scene_prepare_images(image_dir, 512, 16, image_names)
 
     im_keypoints = {idx: {} for idx in range(len(image_names))}
@@ -400,8 +404,8 @@ def run_mast_match(mast_model, image_dir, image_names,
 
     for img1, img2 in tqdm(pairs,  desc='Mast inference'):
         pred1, pred2 = mast_inference(mast_model, img1, img2, device, half=half)
-        matches, conf = get_im_matches(pred1=pred1, pred2=pred2, pairs=(img1, img2), im_keypoints=im_keypoints, pixel_tol=pixel_tol)
-        print("111")
+        matches, conf = get_im_matches(pred1=pred1, pred2=pred2, pairs=(img1, img2),
+                                        im_keypoints=im_keypoints, pixel_tol=pixel_tol, viz=True)
 
 
 for dataset, predictions in samples.items():
