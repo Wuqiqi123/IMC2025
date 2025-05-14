@@ -390,7 +390,7 @@ def scene_prepare_images(root, maxdim, patch_size, image_paths):
         image_name_dict[image_paths[idx]] = idx
     return images, image_name_dict
 
-def find_cluster(pairwise_scores, subsample, filelist, images, device, show_dendrogram = False):
+def find_cluster(pairwise_scores, subsample, name_list, images, device, show_dendrogram = False):
     imsizes = [torch.from_numpy(img['true_shape']) for img in images]
     imsizes = torch.concat(imsizes, dim=0).to(device)
 
@@ -415,7 +415,8 @@ def find_cluster(pairwise_scores, subsample, filelist, images, device, show_dend
 
     # Perform hierarchical clustering using the linkage method
     Z = sch.linkage(condensed_distance_matrix, method="average")
-    sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8, labels=filelist)
+    names = [name.split('.')[0] for name in name_list] 
+    sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8, labels=names)
     if show_dendrogram:
         plt.show()
 
@@ -426,8 +427,8 @@ def find_cluster(pairwise_scores, subsample, filelist, images, device, show_dend
     for i, cluster in enumerate(clusters):
         if cluster not in clusters_dict:
             clusters_dict[cluster] = dict(names=[], filelist=[])
-        clusters_dict[cluster]["names"].append(filelist[i])
-        clusters_dict[cluster]["filelist"].append(filelist[i])
+        clusters_dict[cluster]["names"].append(name_list[i])
+        clusters_dict[cluster]["filelist"].append(name_list[i])
 
     
     return clusters_dict
