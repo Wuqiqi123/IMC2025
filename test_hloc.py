@@ -11,6 +11,7 @@ import dataclasses
 from pathlib import Path
 import gc
 import shutil
+import scipy.cluster.hierarchy as sch
 from copy import deepcopy
 import PIL
 import PIL.Image
@@ -28,7 +29,7 @@ import json
 import torchvision
 from scipy.cluster.hierarchy import DisjointSet
 from dust3r.dust3r.utils.geometry import geotrf 
-from dust3r.dust3r.utils.device import to_cpu 
+from dust3r.dust3r.utils.device import to_cpu, to_numpy
 from mast3r.fast_nn import extract_correspondences_nonsym
 from hloc import (
     extract_features,
@@ -389,9 +390,51 @@ def scene_prepare_images(root, maxdim, patch_size, image_paths):
         image_name_dict[image_paths[idx]] = idx
     return images, image_name_dict
 
+def find_cluster(pairwise_scores, subsample, filelist, images, device, show_dendrogram = False):
+    imsizes = [torch.from_numpy(img['true_shape']) for img in images]
+    imsizes = torch.concat(imsizes, dim=0).to(device)
 
-def run_mast_match(mast_model, image_dir, image_names,
-                  device, pairs_path, conf_thr = 1.001, half=True, pixel_tol=5):
+    # Convert the affinity matrix to a distance matrix (if needed)
+    n_patches = (imsizes // subsample).prod(dim=1)
+    max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
+    pws = (pairwise_scores.clone() / max_n_corres).clip(min=np.exp(-10), max=1)
+    pws.fill_diagonal_(1)
+    pws = to_numpy(pws)
+
+    distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
+
+    # Compute the condensed distance matrix
+    condensed_distance_matrix = sch.distance.squareform(distance_matrix)
+
+    if show_dendrogram:
+        from matplotlib import pyplot as plt
+        plt.figure(figsize=(50, 10))
+        plt.title('Hierarchical Clustering Dendrogram')
+        plt.xlabel('sample index')
+        plt.ylabel('distance')
+
+    # Perform hierarchical clustering using the linkage method
+    Z = sch.linkage(condensed_distance_matrix, method="average")
+    sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8, labels=filelist)
+    if show_dendrogram:
+        plt.show()
+
+    # dendrogram = sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8)
+    clusters = sch.fcluster(Z, t=2.6, criterion='distance')
+    clusters_dict = {}
+    print(f'clusters = {clusters}')
+    for i, cluster in enumerate(clusters):
+        if cluster not in clusters_dict:
+            clusters_dict[cluster] = dict(names=[], filelist=[])
+        clusters_dict[cluster]["names"].append(filelist[i])
+        clusters_dict[cluster]["filelist"].append(filelist[i])
+
+    
+    return clusters_dict
+
+
+def run_mast_match(mast_model, image_dir, image_names, 
+                  device, pairs_path, subsample = 8, conf_thr = 1.001, half=True, pixel_tol=5):
     images, image_name_dict = scene_prepare_images(image_dir, 512, 16, image_names)
 
     im_keypoints = {idx: {} for idx in range(len(image_names))}
@@ -402,10 +445,16 @@ def run_mast_match(mast_model, image_dir, image_names,
     for i, j in pairs_names:
         pairs.append((images[image_name_dict[i]], images[image_name_dict[j]]))
 
+    pairwise_scores = torch.zeros((len(images), len(images)), device=device)
     for img1, img2 in tqdm(pairs,  desc='Mast inference'):
         pred1, pred2 = mast_inference(mast_model, img1, img2, device, half=half)
-        matches, conf = get_im_matches(pred1=pred1, pred2=pred2, pairs=(img1, img2),
-                                        im_keypoints=im_keypoints, pixel_tol=pixel_tol, viz=True)
+        matches, conf = get_im_matches(pred1=pred1, pred2=pred2, pairs=(img1, img2), subsample = subsample,
+                                        im_keypoints=im_keypoints, pixel_tol=pixel_tol, viz=False)
+        pairwise_scores[img1['idx'], img2['idx']] = conf.size
+        pairwise_scores[img2['idx'], img1['idx']] = conf.size
+        
+
+    clusters_dict = find_cluster(pairwise_scores, subsample, image_names, images, device, show_dendrogram=True)
 
 
 for dataset, predictions in samples.items():
