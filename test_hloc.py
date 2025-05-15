@@ -744,7 +744,7 @@ for dataset, predictions in samples.items():
             registered += 1
 
         for image_name in image_names_cluster:
-            prediction_index = filename_to_prdictions_index[image.name]
+            prediction_index = filename_to_prdictions_index[image_name]
             if predictions[prediction_index].cluster_index is None:
                 predictions[prediction_index].cluster_index = prediction_cluster_index
 
