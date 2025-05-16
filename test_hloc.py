@@ -888,7 +888,6 @@ for dataset, predictions in samples.items():
         #                                     image_list=image_names_cluster, min_match_score=0.06, mapper_options = mapper_options)
 
         ## mast
-        images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
         colmap_db_path = sfm_dir / "colmap.db"
         create_empty_db(colmap_db_path)
         images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
