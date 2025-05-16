@@ -879,33 +879,34 @@ for dataset, predictions in samples.items():
         print(f"starting constructing {dataset} with images {image_names_cluster}")
 
         # lightglue
-        # features = workdir / dataset / cluster_dir_name / "features.h5"
-        # matches = workdir / dataset / cluster_dir_name / "matches.h5"
-        # extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=features)
-        # match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
-        # mapper_options = {"min_model_size" : 5, "max_num_models": 50}
-        # max_map, maps = reconstruction.main(sfm_dir, images_dir, sfm_pairs, features, matches,
-        #                                     image_list=image_names_cluster, min_match_score=0.06, mapper_options = mapper_options)
+        features = workdir / dataset / cluster_dir_name / "features.h5"
+        matches = workdir / dataset / cluster_dir_name / "matches.h5"
+        extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=features)
+        match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
+        mapper_options = {"min_model_size": 3, "max_num_models": 50}
+        max_map, maps = reconstruction.main(sfm_dir, images_dir, sfm_pairs, features, matches,
+                                            image_list=image_names_cluster, min_match_score=0.01,
+                                            mapper_options = mapper_options)
 
         ## mast
-        colmap_db_path = sfm_dir / "colmap.db"
-        create_empty_db(colmap_db_path)
-        images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
-        image_to_colmap = import_images_and_cameras(images_dir, colmap_db_path, pycolmap.CameraMode.AUTO,
-                                                     image_list=image_names_cluster, image_path_to_idx=image_name_dict)
-        colmap_image_pairs = run_mast_match_cluster(mast_cache_path, mast_model, images, image_names_cluster,
-                                                     image_name_dict, image_to_colmap, colmap_db_path,
-                                                     device, sfm_pairs, conf_thr=1.001, half=half, pixel_tol=0,
-                                                     min_len_track=2, skip_geometric_verification=False)
-        if len(colmap_image_pairs) == 0:
-            continue
+        # images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
+        # colmap_db_path = sfm_dir / "colmap.db"
+        # create_empty_db(colmap_db_path)
+        # image_to_colmap = import_images_and_cameras(images_dir, colmap_db_path, pycolmap.CameraMode.AUTO,
+        #                                              image_list=image_names_cluster, image_path_to_idx=image_name_dict)
+        # colmap_image_pairs = run_mast_match_cluster(mast_cache_path, mast_model, images, image_names_cluster,
+        #                                              image_name_dict, image_to_colmap, colmap_db_path,
+        #                                              device, sfm_pairs, conf_thr=1.001, half=half, pixel_tol=0,
+        #                                              min_len_track=2, skip_geometric_verification=False)
+        # if len(colmap_image_pairs) == 0:
+        #     continue
 
-        print("verifying matches")
-        reconstruction_path = sfm_dir / "reconstruction"
-        pycolmap.verify_matches(colmap_db_path, sfm_pairs)
-        glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
-        max_map = pycolmap.Reconstruction(reconstruction_path / "0")
-        print(max_map.summary())
+        # print("verifying matches")
+        # reconstruction_path = sfm_dir / "reconstruction"
+        # pycolmap.verify_matches(colmap_db_path, sfm_pairs)
+        # glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
+        # max_map = pycolmap.Reconstruction(reconstruction_path / "0")
+        # print(max_map.summary())
 
         for index, image in max_map.images.items():
             prediction_index = filename_to_prdictions_index[image.name]
