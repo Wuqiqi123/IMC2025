@@ -120,14 +120,14 @@ if is_train:
     datasets_to_process = [
     	# New data.
     	# 'amy_gardens',
-    	'ETs',
+    	# 'ETs',
     	# 'fbk_vineyard',
     	# 'stairs',
     	# Data from IMC 2023 and 2024.
     	# 'imc2024_dioscuri_baalshamin',
     	# 'imc2023_theather_imc2024_church',
     	# 'imc2023_heritage',
-    	# 'imc2023_haiper',
+    	'imc2023_haiper',
     	# 'imc2024_lizard_pond',
     	# 'pt_stpeters_stpauls',
     	# 'pt_brandenburg_british_buckingham',
@@ -547,7 +547,7 @@ def mast_find_cluster(cache_path, mast_model, images, image_name_dict,
     pws = to_numpy(pws)
 
     distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
-    clusters_dict = find_cluster(distance_matrix, image_names, show_dendrogram=True)
+    clusters_dict = find_cluster(distance_matrix, image_names, show_dendrogram=False)
 
     return clusters_dict
 
