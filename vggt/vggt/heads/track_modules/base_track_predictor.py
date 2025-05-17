@@ -138,7 +138,9 @@ class BaseTrackerPredictor(nn.Module):
 
             # (In my trials, it is also okay to just add the flows_emb instead of concat)
             flows_emb = torch.cat([flows_emb, flows / self.max_scale, flows / self.max_scale], dim=-1)
-
+            if fcorrs_.dtype==torch.float16:
+                flows_emb = flows_emb.half()
+                
             track_feats_ = track_feats.permute(0, 2, 1, 3).reshape(B * N, S, self.latent_dim)
 
             # Concatenate them as the input for the transformers
@@ -148,7 +150,8 @@ class BaseTrackerPredictor(nn.Module):
             # TODO: this can be much simplified
             pos_embed = get_2d_sincos_pos_embed(self.transformer_dim, grid_size=(HH, WW)).to(query_points.device)
             sampled_pos_emb = sample_features4d(pos_embed.expand(B, -1, -1, -1), coords[:, 0])
-
+            if fcorrs_.dtype==torch.float16:
+                sampled_pos_emb = sampled_pos_emb.half()
             sampled_pos_emb = rearrange(sampled_pos_emb, "b n c -> (b n) c").unsqueeze(1)
 
             x = transformer_input + sampled_pos_emb

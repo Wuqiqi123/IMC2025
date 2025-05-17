@@ -86,6 +86,8 @@ def sample_descriptors(keypoints, descriptors, s: int = 8):
     )[None]
     keypoints = keypoints * 2 - 1  # normalize to (-1, 1)
     args = {"align_corners": True} if torch.__version__ >= "1.3" else {}
+    if descriptors.dtype == torch.float16:
+        keypoints = keypoints.half()
     descriptors = torch.nn.functional.grid_sample(
         descriptors, keypoints.view(b, 1, -1, 2), mode="bilinear", **args
     )
@@ -213,7 +215,8 @@ class SuperPoint(Extractor):
         cDa = self.relu(self.convDa(x))
         descriptors = self.convDb(cDa)
         descriptors = torch.nn.functional.normalize(descriptors, p=2, dim=1)
-
+        if descriptors.dtype == torch.float16:
+            keypoints = [kpt.half() for kpt in keypoints]
         # Extract descriptors
         descriptors = [
             sample_descriptors(k[None], d[None], 8)[0]

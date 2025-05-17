@@ -187,10 +187,14 @@ def batch_matrix_to_pycolmap(
 
         try:
             image.points2D = pycolmap.ListPoint2D(points2D_list)
-            image.registered = True
+            # image.registered = True
+            # image.has_pose = True
         except:
             print(f"frame {fidx} is out of BA")
-            image.registered = False
+            # image.registered = False
+            # image.has_pose = False
+        
+           
 
         # add image
         reconstruction.add_image(image)
