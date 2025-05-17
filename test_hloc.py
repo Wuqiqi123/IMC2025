@@ -47,7 +47,24 @@ from hloc.utils.parsers import names_to_pair, parse_retrieval
 from hloc.utils.io import get_keypoints, get_matches
 from hloc.utils.database import COLMAPDatabase
 import pycolmap
+import random
 
+
+def set_seed(seed_value=42):
+    """Sets the seed for random number generators in torch, numpy, and random."""
+    torch.manual_seed(seed_value)
+    
+    # Sets the seed for all GPUs, if available
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed_value)
+        #Ensures that CUDA operations are deterministic
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    
+    np.random.seed(seed_value)
+    random.seed(seed_value)
+
+set_seed(42)
 
 half = True
 device = "cuda:0"
@@ -124,12 +141,12 @@ if is_train:
     datasets_to_process = [
     	# New data.
     	# 'amy_gardens',
-    	# 'ETs',
+    	'ETs',
     	# 'fbk_vineyard',
     	# 'stairs',
     	# Data from IMC 2023 and 2024.
     	# 'imc2024_dioscuri_baalshamin',
-    	'imc2023_theather_imc2024_church',
+    	# 'imc2023_theather_imc2024_church',
     	# 'imc2023_heritage',
     	# 'imc2023_haiper',
     	# 'imc2024_lizard_pond',
@@ -507,12 +524,16 @@ def find_cluster(distance_matrix, name_list, show_dendrogram = False):
         sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=5, labels=names)
         plt.show()
 
-    import numpy as np
+    import scipy
     xx = [22, 54, 76, 209] 
-    yy = [3, 5, 11.5, 13.5]
-    aa, bb = np.polyfit(xx, yy, 1, w = np.log(xx))
-    ff = np.poly1d((aa, bb))
+    yy = [3, 7, 12, 14]
+    # Perform curve fitting
+    params, covariance = scipy.optimize.curve_fit(lambda t, a, b: a + b * np.log(t), xx, yy)
+    a, b = params  # Unpack the parameters
+    def ff(x):
+        return a + b * np.log(x)
     tt = ff(len(name_list))  
+    print("find cluster with similarity threshold = ", tt, " using curve fitting")
     clusters = sch.fcluster(Z, t=tt, criterion='distance')
     clusters_dict = {}
     print(f'clusters = {clusters}')
@@ -794,6 +815,80 @@ def lightglue_find_cluster(pairs_path, match_path, images, image_name_dict, min_
     clusters_dict = find_cluster(distance_matrix, image_names, show_dendrogram=False)
     return clusters_dict
 
+
+def import_matches(
+    image_ids,
+    database_path: Path,
+    pairs_path: Path,
+    matches_path: Path,
+    min_match_score,
+    skip_geometric_verification: bool = False,
+):
+    print("Importing matches into the database...")
+
+    with open(str(pairs_path), "r") as f:
+        pairs = [p.split() for p in f.readlines()]
+
+    db = COLMAPDatabase.connect(database_path)
+
+    matched = set()
+    for name0, name1 in tqdm(pairs):
+        id0, id1 = image_ids[name0], image_ids[name1]
+        if len({(id0, id1), (id1, id0)} & matched) > 0:
+            continue
+        matches, scores = get_matches(matches_path, name0, name1)
+        if min_match_score:
+            matches = matches[scores > min_match_score]
+        db.add_matches(id0, id1, matches)
+        matched |= {(id0, id1), (id1, id0)}
+
+        if skip_geometric_verification:
+            db.add_two_view_geometry(id0, id1, matches)
+
+    db.commit()
+    db.close()
+
+def hloc_reconstruction(
+    sfm_dir: Path,
+    image_dir: Path,
+    pairs: Path,
+    features: Path,
+    matches: Path,
+    camera_mode: pycolmap.CameraMode = pycolmap.CameraMode.AUTO,
+    verbose: bool = False,
+    skip_geometric_verification: bool = False,
+    min_match_score =  None,
+    image_list = None,
+    image_options = None,
+    mapper_options = None,
+):
+    assert features.exists(), features
+    assert pairs.exists(), pairs
+    assert matches.exists(), matches
+
+    sfm_dir.mkdir(parents=True, exist_ok=True)
+    database = sfm_dir / "database.db"
+
+    from hloc.reconstruction import (
+        create_empty_db,
+        import_features,
+        import_images,
+        get_image_ids
+    )
+    create_empty_db(database)
+    import_images(image_dir, database, camera_mode, image_list, image_options)
+    image_ids = get_image_ids(database)
+    import_features(image_ids, database, features)
+    import_matches(
+        image_ids,
+        database,
+        pairs,
+        matches,
+        min_match_score,
+        skip_geometric_verification,
+    )
+    return database
+
 def glomap_run_mapper(colmap_db_path, recon_path, image_root_path):
     print("running mapping")
     args = [
@@ -884,6 +979,8 @@ for dataset, predictions in samples.items():
         make_complete_paris(sfm_pairs, image_names_cluster)
 
         sfm_dir = workdir / dataset / cluster_dir_name / "sfm"
+        if sfm_dir.exists():
+            shutil.rmtree(sfm_dir)
         os.makedirs(sfm_dir, exist_ok=True)
 
 
@@ -895,8 +992,8 @@ for dataset, predictions in samples.items():
         extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=features)
         match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
         mapper_options = {"min_model_size": 3, "max_num_models": 50}
-        max_map, maps = reconstruction.main(sfm_dir, images_dir, sfm_pairs, features, matches,
-                                            image_list=image_names_cluster, min_match_score=0.03,
+        colmap_db_path = hloc_reconstruction(sfm_dir, images_dir, sfm_pairs, features, matches,
+                                            image_list=image_names_cluster, min_match_score=0.04,
                                             mapper_options = mapper_options)
 
         ## mast
@@ -912,12 +1009,12 @@ for dataset, predictions in samples.items():
         # if len(colmap_image_pairs) == 0:
         #     continue
 
-        # print("verifying matches")
-        # reconstruction_path = sfm_dir / "reconstruction"
-        # pycolmap.verify_matches(colmap_db_path, sfm_pairs)
-        # glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
-        # max_map = pycolmap.Reconstruction(reconstruction_path / "0")
-        # print(max_map.summary())
+        print("verifying matches")
+        reconstruction_path = sfm_dir / "reconstruction"
+        pycolmap.verify_matches(colmap_db_path, sfm_pairs)
+        glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
+        max_map = pycolmap.Reconstruction(reconstruction_path / "0")
+        print(max_map.summary())
 
         for index, image in max_map.images.items():
             prediction_index = filename_to_prdictions_index[image.name]
