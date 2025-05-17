@@ -50,7 +50,7 @@ import pycolmap
 import random
 
 
-def set_seed(seed_value=42):
+def set_seed(seed_value=1177):
     """Sets the seed for random number generators in torch, numpy, and random."""
     torch.manual_seed(seed_value)
     
@@ -64,7 +64,7 @@ def set_seed(seed_value=42):
     np.random.seed(seed_value)
     random.seed(seed_value)
 
-set_seed(42)
+set_seed(1177)
 
 half = True
 device = "cuda:0"
@@ -993,7 +993,7 @@ for dataset, predictions in samples.items():
         match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
         mapper_options = {"min_model_size": 3, "max_num_models": 50}
         colmap_db_path = hloc_reconstruction(sfm_dir, images_dir, sfm_pairs, features, matches,
-                                            image_list=image_names_cluster, min_match_score=0.04,
+                                            image_list=image_names_cluster, min_match_score=0.05,
                                             mapper_options = mapper_options)
 
         ## mast
