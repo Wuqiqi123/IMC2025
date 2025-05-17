@@ -993,7 +993,7 @@ for dataset, predictions in samples.items():
         match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
         mapper_options = {"min_model_size": 3, "max_num_models": 50}
         colmap_db_path = hloc_reconstruction(sfm_dir, images_dir, sfm_pairs, features, matches,
-                                            image_list=image_names_cluster, min_match_score=0.05,
+                                            image_list=image_names_cluster, min_match_score=0.04,
                                             mapper_options = mapper_options)
 
         ## mast
