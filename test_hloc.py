@@ -51,21 +51,6 @@ import pycolmap
 
 half = True
 device = "cuda:0"
-mast_model = AsymmetricMASt3R.from_pretrained("ckpts/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth")
-if half:
-    mast_model.half().to(device)
-else:
-    mast_model.to(device)
-
-mast_model = torch.compile(mast_model)
-
-boq_model = get_trained_boq(backbone_name="dinov2", output_dim=12288, ckpt='ckpts/dinov2_12288.pth')
-if half:
-    boq_model.half().to(device)
-else:
-    boq_model.to(device)
-    
-boq_model.eval()
 
 # Set is_train=True to run the notebook on the training data.
 # Set is_train=False if submitting an entry to the competition (test data is hidden, and different from what you see on the "test" folder).
@@ -84,6 +69,25 @@ if is_train:
     sample_submission_csv = os.path.join(data_dir, 'train_labels.csv')
 else:
     sample_submission_csv = os.path.join(data_dir, 'sample_submission.csv')
+
+
+mast_model = AsymmetricMASt3R.from_pretrained("ckpts/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth")
+if half:
+    mast_model.half().to(device)
+else:
+    mast_model.to(device)
+
+mast_model = torch.compile(mast_model)
+
+boq_model = get_trained_boq(backbone_name="dinov2", output_dim=12288, ckpt='ckpts/dinov2_12288.pth')
+if half:
+    boq_model.half().to(device)
+else:
+    boq_model.to(device)
+    
+boq_model.eval()
+
+
 
 
 @dataclasses.dataclass
@@ -125,9 +129,9 @@ if is_train:
     	# 'stairs',
     	# Data from IMC 2023 and 2024.
     	# 'imc2024_dioscuri_baalshamin',
-    	# 'imc2023_theather_imc2024_church',
+    	'imc2023_theather_imc2024_church',
     	# 'imc2023_heritage',
-    	'imc2023_haiper',
+    	# 'imc2023_haiper',
     	# 'imc2024_lizard_pond',
     	# 'pt_stpeters_stpauls',
     	# 'pt_brandenburg_british_buckingham',
@@ -503,8 +507,13 @@ def find_cluster(distance_matrix, name_list, show_dendrogram = False):
         sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=5, labels=names)
         plt.show()
 
-    # dendrogram = sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=8)
-    clusters = sch.fcluster(Z, t=6.5, criterion='distance')
+    import numpy as np
+    xx = [22, 54, 76, 209] 
+    yy = [3, 5, 11.5, 13.5]
+    aa, bb = np.polyfit(xx, yy, 1, w = np.log(xx))
+    ff = np.poly1d((aa, bb))
+    tt = ff(len(name_list))  
+    clusters = sch.fcluster(Z, t=tt, criterion='distance')
     clusters_dict = {}
     print(f'clusters = {clusters}')
     for i, cluster in enumerate(clusters):
@@ -532,8 +541,8 @@ def mast_find_cluster(cache_path, mast_model, images, image_name_dict,
         conf = get_im_matches_conf(cache_path, pred1=pred1, pred2=pred2, pairs=(img1, img2), 
                                    subsample=subsample, conf_thr=conf_thr,
                                     pixel_tol=pixel_tol, viz=False)
-        pairwise_scores[img1['idx'], img2['idx']] = conf.size
-        pairwise_scores[img2['idx'], img1['idx']] = conf.size
+        pairwise_scores[img1['idx'], img2['idx']] = conf.size * conf.mean()
+        pairwise_scores[img2['idx'], img1['idx']] = conf.size * conf.mean()
         
 
     imsizes = [torch.from_numpy(img['true_shape']) for img in images]
@@ -542,12 +551,12 @@ def mast_find_cluster(cache_path, mast_model, images, image_name_dict,
     # Convert the affinity matrix to a distance matrix (if needed)
     n_patches = (imsizes // subsample).prod(dim=1)
     max_n_corres = 3 * torch.minimum(n_patches[:,None], n_patches[None,:])
-    pws = (pairwise_scores.clone() / max_n_corres).clip(min=np.exp(-10), max=1)
+    pws = (pairwise_scores.clone() / max_n_corres).clip(min=np.exp(-20), max=1)
     pws.fill_diagonal_(1)
     pws = to_numpy(pws)
 
-    distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
-    clusters_dict = find_cluster(distance_matrix, image_names, show_dendrogram=False)
+    distance_matrix = np.where(pws <= 1.0, -np.log(pws), 20).clip(max=20)
+    clusters_dict = find_cluster(distance_matrix, image_names, show_dendrogram=True)
 
     return clusters_dict
 
@@ -777,11 +786,11 @@ def lightglue_find_cluster(pairs_path, match_path, images, image_name_dict, min_
         matched |= {(id0, id1), (id1, id0)}
 
     max_number_point = 9000
-    pws = (pairwise_scores.clone() / max_number_point).clip(min=np.exp(-10), max=1)
+    pws = (pairwise_scores.clone() / max_number_point).clip(min=np.exp(-100), max=1)
     pws.fill_diagonal_(1)
     pws = to_numpy(pws)
 
-    distance_matrix = np.where(pws <= 1.0, -np.log(pws), 10).clip(max=10)
+    distance_matrix = np.where(pws <= 1.0, -np.log(pws), 100).clip(max=100)
     clusters_dict = find_cluster(distance_matrix, image_names, show_dendrogram=False)
     return clusters_dict
 
@@ -826,6 +835,8 @@ for dataset, predictions in samples.items():
 
     print(f'\nProcessing dataset "{dataset}": {len(image_names)} images')
 
+    sorted_image_names = sorted(image_names)
+
     dataset_dir = os.path.join(workdir, dataset)
 
     boq_topks = boq_sort_topk(images_dir, image_names, boq_model, device, vis=False, topk=40, half=half)
@@ -850,7 +861,7 @@ for dataset, predictions in samples.items():
     os.makedirs(mast_cache_path, exist_ok=True)
     images, image_name_dict = scene_prepare_images(images_dir, 224, patch_size, image_names)
     clusters_dict = mast_find_cluster(mast_cache_path, mast_model, images, image_name_dict,
-                                       device, sfm_pairs, subsample=8, conf_thr=1.001, half=half, pixel_tol=0)
+                                       device, sfm_pairs, subsample=8, conf_thr=0.7, half=half, pixel_tol=0)
 
     filename_to_prdictions_index = {p.filename: idx for idx, p in enumerate(predictions)}
 
@@ -861,7 +872,7 @@ for dataset, predictions in samples.items():
         for img_name in image_cluster_dict["names"]:
             print(f'-- {img_name}')
         
-        if len(image_cluster_dict["filelist"]) < 6:
+        if len(image_cluster_dict["filelist"]) < 8:
             print(f'-- outlier clusters {image_cluster_dict["filelist"]}')
             continue
         
@@ -885,7 +896,7 @@ for dataset, predictions in samples.items():
         match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
         mapper_options = {"min_model_size": 3, "max_num_models": 50}
         max_map, maps = reconstruction.main(sfm_dir, images_dir, sfm_pairs, features, matches,
-                                            image_list=image_names_cluster, min_match_score=0.01,
+                                            image_list=image_names_cluster, min_match_score=0.03,
                                             mapper_options = mapper_options)
 
         ## mast
