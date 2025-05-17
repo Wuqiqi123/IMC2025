@@ -15,15 +15,18 @@ from vggt.heads.track_head import TrackHead
 
 
 class VGGT(nn.Module, PyTorchModelHubMixin):
-    def __init__(self, img_size=518, patch_size=14, embed_dim=1024):
+    def __init__(self, img_size=518, patch_size=14, embed_dim=1024, include_point_head=True, return_intermediate=False):
         super().__init__()
 
         self.aggregator = Aggregator(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim)
         self.camera_head = CameraHead(dim_in=2 * embed_dim)
-        self.point_head = DPTHead(dim_in=2 * embed_dim, output_dim=4, activation="inv_log", conf_activation="expp1")
+        if include_point_head:
+            self.point_head = DPTHead(dim_in=2 * embed_dim, output_dim=4, activation="inv_log", conf_activation="expp1")
+        else:
+            self.point_head = None
         self.depth_head = DPTHead(dim_in=2 * embed_dim, output_dim=2, activation="exp", conf_activation="expp1")
         self.track_head = TrackHead(dim_in=2 * embed_dim, patch_size=patch_size)
-
+        self.return_intermediate = return_intermediate
     def forward(
         self,
         images: torch.Tensor,
@@ -91,6 +94,9 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
             predictions["vis"] = vis
             predictions["conf"] = conf
 
-        predictions["images"] = images
-
+        # predictions["images"] = images
+        if self.return_intermediate:
+            predictions["aggregated_tokens_list"] = aggregated_tokens_list
+            predictions["patch_start_idx"] = patch_start_idx
+        
         return predictions

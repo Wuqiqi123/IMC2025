@@ -5,9 +5,11 @@ import torch
 import torch.nn.functional as F
 from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 from vggt.utils.geometry import unproject_depth_map_to_point_map
-from tensor_to_pycolmap import batch_matrix_to_pycolmap, pycolmap_to_batch_matrix
+from evaluation.tensor_to_pycolmap import batch_matrix_to_pycolmap, pycolmap_to_batch_matrix
 
-from lightglue import ALIKED, SuperPoint, SIFT
+import sys
+sys.path.append("/workspace/work/local/IMC2025/")
+from lightglue import ALIKED, SuperPoint, SIFT, DISK
 
 
 _RESNET_MEAN = [0.485, 0.456, 0.406]
@@ -15,7 +17,7 @@ _RESNET_STD = [0.229, 0.224, 0.225]
 
 
 def generate_rank_by_dino(
-    images, query_frame_num, image_size=518, model_name="dinov2_vitb14_reg", device="cuda", spatial_similarity=True
+    images, query_frame_num, image_size=518, model_name="dinov2_vitb14_reg", device="cuda", spatial_similarity=True, use_fp16=False
 ):
     """
     Generate a ranking of frames using DINO ViT features.
@@ -31,13 +33,20 @@ def generate_rank_by_dino(
     Returns:
         List of frame indices ranked by their representativeness
     """
+    # from boq.src.backbones import ResNet, DinoV2
+
+    # dino_v2_model = DinoV2() #
     dino_v2_model = torch.hub.load('facebookresearch/dinov2', model_name)
+    if use_fp16:
+        dino_v2_model.half()
     dino_v2_model.eval()
     dino_v2_model = dino_v2_model.to(device)
 
     resnet_mean = torch.tensor(_RESNET_MEAN, device=device).view(1, 3, 1, 1)
     resnet_std = torch.tensor(_RESNET_STD, device=device).view(1, 3, 1, 1)
     images_resnet_norm = (images - resnet_mean) / resnet_std
+    if use_fp16:
+        images_resnet_norm = images_resnet_norm.half()
 
     with torch.no_grad():
         frame_feat = dino_v2_model(images_resnet_norm, is_training=True)
@@ -60,6 +69,7 @@ def generate_rank_by_dino(
         )
 
     distance_matrix = 100 - similarity_matrix.clone()
+    del frame_feat  # 释放原始特征
 
     # Ignore self-pairing
     similarity_matrix.fill_diagonal_(-100)
@@ -72,6 +82,9 @@ def generate_rank_by_dino(
     fps_idx = farthest_point_sampling(
         distance_matrix, query_frame_num, most_common_frame_index
     )
+    # 强制释放模型和剩余变量
+    del dino_v2_model, distance_matrix, similarity_sum
+    torch.cuda.empty_cache()  # 立即清理显存缓存
 
     return fps_idx
 
@@ -150,9 +163,29 @@ def switch_tensor_order(tensors, order, dim=1):
         torch.index_select(tensor, dim, order) if tensor is not None else None
         for tensor in tensors
     ]
+    
+
+def switch_intermidiate_tensor_order(predictions, order, dim=1):
+    """
+    Reorder tensors along a specific dimension according to the given order.
+
+    Args:
+        tensors: List of tensors to reorder
+        order: Tensor of indices specifying the new order
+        dim: Dimension along which to reorder
+
+    Returns:
+        List of reordered tensors
+    """
+    for key, val in predictions.items():
+        if key == '':
+            predictions[key] = switch_tensor_order(val, order, dim)
+    
+    return predictions
 
 
-def predict_track(model, images, query_points, dtype=torch.bfloat16, use_tf32_for_track=True, iters=4):
+def predict_track(model, images, query_points, dtype=torch.bfloat16, use_tf32_for_track=True, iters=4,
+                  aggregated_tokens_list=None, ps_idx=None, device=None):
     """
     Predict tracks for query points across frames.
 
@@ -167,28 +200,29 @@ def predict_track(model, images, query_points, dtype=torch.bfloat16, use_tf32_fo
     Returns:
         Predicted tracks, visibility scores, and confidence scores
     """
+    if device:
+        # model.to(device)
+        device_model = model.to(device)
+        images = images.clone().to(device)
+        query_points = query_points.clone().to(device)
+        aggregated_tokens_list = [aggr.clone().to(device) if aggr is not None else aggr for aggr in aggregated_tokens_list] if aggregated_tokens_list is not None else aggregated_tokens_list
+        # ps_idx = ps_idx.to(device) if ps_idx is not None else ps_idx
     with torch.no_grad():
-        with torch.cuda.amp.autocast(dtype=dtype):
-            images = images[None]  # add batch dimension
-            aggregated_tokens_list, ps_idx = model.aggregator(images)
-
-            if not use_tf32_for_track:
-                track_list, vis_score, conf_score = model.track_head(
-                    aggregated_tokens_list, images, ps_idx, query_points=query_points, iters=iters
-                )
-
         if use_tf32_for_track:
-            with torch.cuda.amp.autocast(enabled=False):
-                track_list, vis_score, conf_score = model.track_head(
+                images = images[None]  # add batch dimension
+
+            # with torch.cuda.amp.autocast(enabled=False):
+                track_list, vis_score, conf_score = device_model.track_head(
                     aggregated_tokens_list, images, ps_idx, query_points=query_points, iters=iters
                 )
 
     pred_track = track_list[-1]
+    torch.cuda.empty_cache()
 
     return pred_track.squeeze(0), vis_score.squeeze(0), conf_score.squeeze(0)
 
 
-def initialize_feature_extractors(max_query_num, det_thres, extractor_method="aliked", device="cuda"):
+def initialize_feature_extractors(max_query_num, det_thres, extractor_method="aliked", device="cuda", use_fp16=False):
     """
     Initialize feature extractors that can be reused based on a method string.
 
@@ -208,19 +242,32 @@ def initialize_feature_extractors(max_query_num, det_thres, extractor_method="al
         method = method.strip()
         if method == "aliked":
             aliked_extractor = ALIKED(max_num_keypoints=max_query_num, detection_threshold=det_thres)
+            if use_fp16:
+                aliked_extractor = aliked_extractor.half()
             extractors['aliked'] = aliked_extractor.to(device).eval()
         elif method == "sp":
             sp_extractor = SuperPoint(max_num_keypoints=max_query_num, detection_threshold=det_thres)
+            if use_fp16:
+                sp_extractor = sp_extractor.half()
             extractors['sp'] = sp_extractor.to(device).eval()
         elif method == "sift":
             sift_extractor = SIFT(max_num_keypoints=max_query_num)
+            if use_fp16:
+                sift_extractor = sift_extractor.half()
             extractors['sift'] = sift_extractor.to(device).eval()
+        elif method == "disk":
+            disk_extractor = DISK(max_num_keypoints=max_query_num)
+            if use_fp16:
+                disk_extractor = disk_extractor.half()
+            extractors['disk'] = disk_extractor.to(device).eval()
         else:
             print(f"Warning: Unknown feature extractor '{method}', ignoring.")
 
     if not extractors:
         print(f"Warning: No valid extractors found in '{extractor_method}'. Using ALIKED by default.")
         aliked_extractor = ALIKED(max_num_keypoints=max_query_num, detection_threshold=det_thres)
+        if use_fp16:
+            sp_extractor = sp_extractor.half()
         extractors['aliked'] = aliked_extractor.to(device).eval()
 
     return extractors
@@ -243,7 +290,7 @@ def extract_keypoints(query_image, extractors, max_query_num):
         for extractor_name, extractor in extractors.items():
             query_points_data = extractor.extract(query_image)
             extractor_points = query_points_data["keypoints"].round()
-
+            
             if query_points_round is not None:
                 query_points_round = torch.cat([query_points_round, extractor_points], dim=1)
             else:
@@ -270,6 +317,7 @@ def run_vggt_with_ba(
     max_reproj_error=12,
     shared_camera=True,
     camera_type="SIMPLE_PINHOLE",
+    use_fp16=False,
 ):
     """
     Run VGGT with bundle adjustment for pose estimation.
@@ -303,7 +351,7 @@ def run_vggt_with_ba(
     query_frame_indexes = generate_rank_by_dino(
         images, query_frame_num, image_size=518,
         model_name="dinov2_vitb14_reg", device=device,
-        spatial_similarity=False
+        spatial_similarity=False, use_fp16=use_fp16
     )
 
     # Add the first image to the front if not already present
@@ -313,10 +361,12 @@ def run_vggt_with_ba(
 
     # Get initial pose and depth predictions
     with torch.no_grad():
-        with torch.cuda.amp.autocast(dtype=dtype):
+        # with torch.cuda.amp.autocast(dtype=dtype):
             predictions = model(images) # TODO: point map head is redundant here, remove it
 
-    with torch.cuda.amp.autocast(dtype=torch.float64):
+    # with torch.cuda.amp.autocast(dtype=torch.float64):
+    with torch.no_grad():
+
         extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images.shape[-2:])
         pred_extrinsic = extrinsic[0]
         pred_intrinsic = intrinsic[0]
@@ -338,23 +388,31 @@ def run_vggt_with_ba(
     pred_world_points_conf = []
 
     # Initialize feature extractors
-    extractors = initialize_feature_extractors(max_query_num, det_thres, extractor_method, device)
+    extractors = initialize_feature_extractors(max_query_num, det_thres, extractor_method, device, use_fp16=use_fp16)
 
+    device2 = 'cuda:1'
     # Process each query frame
     for query_index in query_frame_indexes:
         query_image = images[query_index]
         query_points_round = extract_keypoints(query_image, extractors, max_query_num)
+        torch.cuda.empty_cache()
 
         # Reorder images to put query image first
         reorder_index = calculate_index_mappings(query_index, frame_num, device=device)
         reorder_images = switch_tensor_order([images], reorder_index, dim=0)[0]
+        predictions = switch_intermidiate_tensor_order(predictions, reorder_index, dim=0)
 
         # Track points across frames
         reorder_tracks, reorder_vis_score, reorder_conf_score = predict_track(
-            model, reorder_images, query_points_round, dtype=dtype, use_tf32_for_track=True, iters=4,
+            model, reorder_images, query_points_round, dtype=dtype, use_tf32_for_track=True, iters=4, 
+            aggregated_tokens_list=predictions["aggregated_tokens_list"], 
+            ps_idx=predictions["patch_start_idx"],
+            device=device2
         )
-
-        # Restore original order
+        reorder_tracks  = reorder_tracks.to(device)
+        reorder_vis_score = reorder_vis_score.to(device)
+        reorder_conf_score = reorder_conf_score.to(device)
+        # Restore original order xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
         pred_track, pred_vis, pred_score = switch_tensor_order(
             [reorder_tracks, reorder_vis_score, reorder_conf_score], reorder_index, dim=0
         )
@@ -376,11 +434,11 @@ def run_vggt_with_ba(
         pred_world_points_conf.append(query_world_points_conf)
 
     # Concatenate prediction lists
-    pred_tracks = torch.cat(pred_tracks, dim=1)
-    pred_vis_scores = torch.cat(pred_vis_scores, dim=1)
-    pred_conf_scores = torch.cat(pred_conf_scores, dim=1)
-    pred_world_points = torch.cat(pred_world_points, dim=0)
-    pred_world_points_conf = torch.cat(pred_world_points_conf, dim=0)
+    pred_tracks = torch.cat(pred_tracks, dim=1).to(device)
+    pred_vis_scores = torch.cat(pred_vis_scores, dim=1).to(device)
+    pred_conf_scores = torch.cat(pred_conf_scores, dim=1).to(device)
+    pred_world_points = torch.cat(pred_world_points, dim=0).to(device)
+    pred_world_points_conf = torch.cat(pred_world_points_conf, dim=0).to(device)
 
     # Filter points by confidence
     filtered_flag = pred_world_points_conf > 1.5
