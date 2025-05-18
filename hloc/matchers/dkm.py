@@ -6,8 +6,8 @@ import numpy as np
 from os.path import join
 from pathlib import Path
 
-from hloc.utils import CLS_DICT, exclude
-from ..utils.base_model import BaseModel
+# from hloc.utils import CLS_DICT, exclude
+from hloc.utils.base_model import BaseModel
 from hloc.networks.dkm.models.model_zoo.DKMv3 import DKMv3
 
 
@@ -43,7 +43,7 @@ class DKM(BaseModel):
         self.w = 896
         model = DKMv3(None, self.h, self.w, upsample_preds=True)
 
-        checkpoints_path = join('weights', conf['weights'])
+        checkpoints_path = join('ckpts', conf['weights'])
         state_dict = torch.load(checkpoints_path, map_location='cpu')
         if 'state_dict' in state_dict.keys(): state_dict = state_dict['state_dict']
         for k in list(state_dict.keys()):
@@ -56,8 +56,8 @@ class DKM(BaseModel):
         self.net = model
 
     def _forward(self, data):
-        outputs = Path(os.environ['GIMRECONSTRUCTION'])
-        segment_root = outputs / '..' / 'segment'
+        # outputs = Path(os.environ['GIMRECONSTRUCTION'])
+        # segment_root = outputs / '..' / 'segment'
 
         # For consistency with hloc pairs, we refine kpts in image0!
         rename = {
@@ -78,33 +78,33 @@ class DKM(BaseModel):
             img0, img1 = data_['name0'], data_['name1']
             
             # segment image
-            seg_path0 = join(segment_root, '{}.npy'.format(img0[:-4]))
-            mask0 = np.load(seg_path0)
-            if mask0.shape[:2] != image0.shape[-2:]:
-                mask0 = cv2.resize(mask0, image0.shape[-2:][::-1],
-                                   interpolation=cv2.INTER_NEAREST)
-            mask_0 = mask0 != CLS_DICT[exclude[0]]
-            for cls in exclude[1:]:
-                mask_0 = mask_0 & (mask0 != CLS_DICT[cls])
-            mask_0 = mask0
-            mask_0 = mask_0.astype(np.uint8)
-            mask_0 = torch.from_numpy((mask_0 == 0).astype(np.uint8)).to(image0.device)
-            mask_0 = mask_0.float()[None, None] == 0
-            image0 = image0 * mask_0
-            # segment image
-            seg_path1 = join(segment_root, '{}.npy'.format(img1[:-4]))
-            mask1 = np.load(seg_path1)
-            if mask1.shape != image1.shape[-2:]:
-                mask1 = cv2.resize(mask1, image1.shape[-2:][::-1],
-                                   interpolation=cv2.INTER_NEAREST)
-            mask_1 = mask1 != CLS_DICT[exclude[0]]
-            for cls in exclude[1:]:
-                mask_1 = mask_1 & (mask1 != CLS_DICT[cls])
-            mask_1 = mask1
-            mask_1 = mask_1.astype(np.uint8)
-            mask_1 = torch.from_numpy((mask_1 == 0).astype(np.uint8)).to(image1.device)
-            mask_1 = mask_1.float()[None, None] == 0
-            image1 = image1 * mask_1
+            # seg_path0 = join(segment_root, '{}.npy'.format(img0[:-4]))
+            # mask0 = np.load(seg_path0)
+            # if mask0.shape[:2] != image0.shape[-2:]:
+            #     mask0 = cv2.resize(mask0, image0.shape[-2:][::-1],
+            #                        interpolation=cv2.INTER_NEAREST)
+            # mask_0 = mask0 != CLS_DICT[exclude[0]]
+            # for cls in exclude[1:]:
+            #     mask_0 = mask_0 & (mask0 != CLS_DICT[cls])
+            # mask_0 = mask0
+            # mask_0 = mask_0.astype(np.uint8)
+            # mask_0 = torch.from_numpy((mask_0 == 0).astype(np.uint8)).to(image0.device)
+            # mask_0 = mask_0.float()[None, None] == 0
+            # image0 = image0 * mask_0
+            # # segment image
+            # seg_path1 = join(segment_root, '{}.npy'.format(img1[:-4]))
+            # mask1 = np.load(seg_path1)
+            # if mask1.shape != image1.shape[-2:]:
+            #     mask1 = cv2.resize(mask1, image1.shape[-2:][::-1],
+            #                        interpolation=cv2.INTER_NEAREST)
+            # mask_1 = mask1 != CLS_DICT[exclude[0]]
+            # for cls in exclude[1:]:
+            #     mask_1 = mask_1 & (mask1 != CLS_DICT[cls])
+            # mask_1 = mask1
+            # mask_1 = mask_1.astype(np.uint8)
+            # mask_1 = torch.from_numpy((mask_1 == 0).astype(np.uint8)).to(image1.device)
+            # mask_1 = mask_1.float()[None, None] == 0
+            # image1 = image1 * mask_1
 
             orig_width0, orig_height0, pad_left0, pad_right0, pad_top0, pad_bottom0 = get_padding_size(image0, self.h, self.w)
             orig_width1, orig_height1, pad_left1, pad_right1, pad_top1, pad_bottom1 = get_padding_size(image1, self.h, self.w)

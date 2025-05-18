@@ -41,6 +41,9 @@ from hloc import (
     visualization,
     pairs_from_exhaustive,
 )
+
+from hloc import gim
+
 from hloc.visualization import plot_images, read_image
 from hloc.utils import viz_3d
 from hloc.utils.parsers import names_to_pair, parse_retrieval
@@ -995,8 +998,11 @@ for dataset, predictions in samples.items():
         # lightglue
         clus_features = workdir / dataset / cluster_dir_name / "features.h5"
         clus_matches = workdir / dataset / cluster_dir_name / "matches.h5"
-        extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=clus_features)
-        match_features.main(matcher_conf, clus_sfm_pairs, features=clus_features, matches=clus_matches)
+    
+        dense_matcher_conf = gim.confs["gim_dkm"]
+        clus_features, clus_matches = gim.main(dense_matcher_conf, clus_sfm_pairs, images_dir,  workdir / dataset / cluster_dir_name)
+        # extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=clus_features)
+        # match_features.main(matcher_conf, clus_sfm_pairs, features=clus_features, matches=clus_matches)
         mapper_options = {"min_model_size": 3, "max_num_models": 50}
         colmap_db_path, matches_size = hloc_reconstruction(clus_sfm_dir, images_dir, clus_sfm_pairs, clus_features, clus_matches,
                                             image_list=image_names_cluster, min_match_score=0.04,
