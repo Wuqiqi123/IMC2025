@@ -43,6 +43,7 @@ from hloc import (
 )
 
 from hloc import gim
+from hloc import match_dense
 
 from hloc.visualization import plot_images, read_image
 from hloc.utils import viz_3d
@@ -963,8 +964,8 @@ for dataset, predictions in samples.items():
     os.makedirs(sfm_dir, exist_ok=True)
     # extract_features.main(feature_conf, images_dir, image_list=image_names, feature_path=features)
     # match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
-    dense_matches_conf = gim.confs["gim_dkm"]
-    features, matches = gim.main(dense_matches_conf, sfm_pairs, images_dir, sfm_dir)
+    dense_matches_conf = match_dense.confs["roma"]
+    features, matches = match_dense.main(dense_matches_conf, sfm_pairs, images_dir, sfm_dir)
     # clusters_dict = lightglue_find_cluster(sfm_pairs, matches, images_dir, image_names, min_match_score=0.3
 
     mapper_options = {"min_model_size" : 5, "max_num_models": 45}
