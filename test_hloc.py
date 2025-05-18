@@ -562,8 +562,8 @@ def mast_find_cluster(cache_path, mast_model, images, image_name_dict,
         conf = get_im_matches_conf(cache_path, pred1=pred1, pred2=pred2, pairs=(img1, img2), 
                                    subsample=subsample, conf_thr=conf_thr,
                                     pixel_tol=pixel_tol, viz=False)
-        pairwise_scores[img1['idx'], img2['idx']] = conf.size * conf.mean()
-        pairwise_scores[img2['idx'], img1['idx']] = conf.size * conf.mean()
+        pairwise_scores[img1['idx'], img2['idx']] = conf.size * conf.mean() if conf.size > 0 else 0
+        pairwise_scores[img2['idx'], img1['idx']] = conf.size * conf.mean() if conf.size > 0 else 0
         
 
     imsizes = [torch.from_numpy(img['true_shape']) for img in images]
@@ -832,6 +832,7 @@ def import_matches(
     db = COLMAPDatabase.connect(database_path)
 
     matched = set()
+    matches_size = 0
     for name0, name1 in tqdm(pairs):
         id0, id1 = image_ids[name0], image_ids[name1]
         if len({(id0, id1), (id1, id0)} & matched) > 0:
@@ -839,14 +840,21 @@ def import_matches(
         matches, scores = get_matches(matches_path, name0, name1)
         if min_match_score:
             matches = matches[scores > min_match_score]
+
+        if matches.shape[0] == 0:
+            continue
+        
+        matches_size += matches.shape[0]
         db.add_matches(id0, id1, matches)
         matched |= {(id0, id1), (id1, id0)}
 
-        if skip_geometric_verification:
-            db.add_two_view_geometry(id0, id1, matches)
+        # if skip_geometric_verification:
+        db.add_two_view_geometry(id0, id1, matches)
 
     db.commit()
     db.close()
+
+    return matches_size
 
 def hloc_reconstruction(
     sfm_dir: Path,
@@ -879,7 +887,7 @@ def hloc_reconstruction(
     import_images(image_dir, database, camera_mode, image_list, image_options)
     image_ids = get_image_ids(database)
     import_features(image_ids, database, features)
-    import_matches(
+    matches_size = import_matches(
         image_ids,
         database,
         pairs,
@@ -887,7 +895,7 @@ def hloc_reconstruction(
         min_match_score,
         skip_geometric_verification,
     )
-    return database
+    return database, matches_size
 
 def glomap_run_mapper(colmap_db_path, recon_path, image_root_path):
     print("running mapping")
@@ -975,27 +983,28 @@ for dataset, predictions in samples.items():
 
         cluster_dir_name = f"cluster_{prediction_cluster_index}"
         os.makedirs(workdir / dataset / cluster_dir_name, exist_ok=True)
-        sfm_pairs = workdir / dataset / cluster_dir_name / "pairs-sfm.txt"
-        make_complete_paris(sfm_pairs, image_names_cluster)
+        clus_sfm_pairs = workdir / dataset / cluster_dir_name / "clu-pairs-sfm.txt"
+        make_complete_paris(clus_sfm_pairs, image_names_cluster)
 
-        sfm_dir = workdir / dataset / cluster_dir_name / "sfm"
-        if sfm_dir.exists():
-            shutil.rmtree(sfm_dir)
-        os.makedirs(sfm_dir, exist_ok=True)
+        clus_sfm_dir = workdir / dataset / cluster_dir_name / "sfm"
+        os.makedirs(clus_sfm_dir, exist_ok=True)
 
 
         print(f"starting constructing {dataset} with images {image_names_cluster}")
 
         # lightglue
-        features = workdir / dataset / cluster_dir_name / "features.h5"
-        matches = workdir / dataset / cluster_dir_name / "matches.h5"
-        extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=features)
-        match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
+        clus_features = workdir / dataset / cluster_dir_name / "features.h5"
+        clus_matches = workdir / dataset / cluster_dir_name / "matches.h5"
+        extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=clus_features)
+        match_features.main(matcher_conf, clus_sfm_pairs, features=clus_features, matches=clus_matches)
         mapper_options = {"min_model_size": 3, "max_num_models": 50}
-        colmap_db_path = hloc_reconstruction(sfm_dir, images_dir, sfm_pairs, features, matches,
+        colmap_db_path, matches_size = hloc_reconstruction(clus_sfm_dir, images_dir, clus_sfm_pairs, clus_features, clus_matches,
                                             image_list=image_names_cluster, min_match_score=0.04,
                                             mapper_options = mapper_options)
-
+        
+        if matches_size < 10:
+            print(f'-- too few matches {matches_size}')
+            continue
         ## mast
         # images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
         # colmap_db_path = sfm_dir / "colmap.db"
@@ -1009,9 +1018,11 @@ for dataset, predictions in samples.items():
         # if len(colmap_image_pairs) == 0:
         #     continue
 
-        print("verifying matches")
-        reconstruction_path = sfm_dir / "reconstruction"
-        pycolmap.verify_matches(colmap_db_path, sfm_pairs)
+        time.sleep(4)
+
+        # print("verifying matches")
+        reconstruction_path = clus_sfm_dir / "reconstruction"
+        # pycolmap.verify_matches(colmap_db_path, clus_sfm_pairs)
         glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
         max_map = pycolmap.Reconstruction(reconstruction_path / "0")
         print(max_map.summary())
