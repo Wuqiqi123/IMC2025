@@ -91,13 +91,13 @@ else:
     sample_submission_csv = os.path.join(data_dir, 'sample_submission.csv')
 
 
-mast_model = AsymmetricMASt3R.from_pretrained("ckpts/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth")
-if half:
-    mast_model.half().to(device)
-else:
-    mast_model.to(device)
+# mast_model = AsymmetricMASt3R.from_pretrained("ckpts/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth")
+# if half:
+#     mast_model.half().to(device)
+# else:
+#     mast_model.to(device)
 
-mast_model = torch.compile(mast_model)
+# mast_model = torch.compile(mast_model)
 
 boq_model = get_trained_boq(backbone_name="dinov2", output_dim=12288, ckpt='ckpts/dinov2_12288.pth')
 if half:
@@ -844,7 +844,7 @@ def import_matches(
         if min_match_score:
             matches = matches[scores > min_match_score]
 
-        if matches.shape[0] == 0:
+        if matches.shape[0] < 10:
             continue
         
         matches_size += matches.shape[0]
@@ -956,101 +956,63 @@ for dataset, predictions in samples.items():
 
     features = workdir / dataset / "features.h5"
     matches = workdir / dataset / "matches.h5"
+    sfm_dir = workdir / dataset / "sfm"
     feature_conf = extract_features.confs["disk"]
     matcher_conf = match_features.confs["disk+lightglue"]
+
+    os.makedirs(sfm_dir, exist_ok=True)
     # extract_features.main(feature_conf, images_dir, image_list=image_names, feature_path=features)
     # match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
-    # clusters_dict = lightglue_find_cluster(sfm_pairs, matches, images_dir, image_names, min_match_score=0.3)
+    dense_matches_conf = gim.confs["gim_dkm"]
+    features, matches = gim.main(dense_matches_conf, sfm_pairs, images_dir, sfm_dir)
+    # clusters_dict = lightglue_find_cluster(sfm_pairs, matches, images_dir, image_names, min_match_score=0.3
 
-    ## then we use mast
-    mast_cache_path = workdir / dataset / "mast_cache"
-    os.makedirs(mast_cache_path, exist_ok=True)
-    images, image_name_dict = scene_prepare_images(images_dir, 224, patch_size, image_names)
-    clusters_dict = mast_find_cluster(mast_cache_path, mast_model, images, image_name_dict,
-                                       device, sfm_pairs, subsample=8, conf_thr=0.7, half=half, pixel_tol=0)
+    mapper_options = {"min_model_size" : 5, "max_num_models": 45}
+    max_map, maps = reconstruction.main(
+        sfm_dir, images_dir, sfm_pairs, features, matches,
+        image_list=image_names, min_match_score=0.04, mapper_options = mapper_options, skip_geometric_verification=True
+    )
 
-    filename_to_prdictions_index = {p.filename: idx for idx, p in enumerate(predictions)}
+    # mapper_options = {"min_model_size": 3, "max_num_models": 50}
+    # colmap_db_path, matches_size = hloc_reconstruction(sfm_dir, images_dir, sfm_pairs, features, matches,
+    #                                     image_list=image_names, min_match_score=0.04,
+    #                                     mapper_options = mapper_options)
+    
+    gc.collect()
+    time.sleep(1)
 
     registered = 0
-    prediction_cluster_index = 0
-    for cluster_id, image_cluster_dict in clusters_dict.items():
-        print(f'cluster {cluster_id}:')
-        for img_name in image_cluster_dict["names"]:
-            print(f'-- {img_name}')
-        
-        if len(image_cluster_dict["filelist"]) < 8:
-            print(f'-- outlier clusters {image_cluster_dict["filelist"]}')
-            continue
-        
-        image_names_cluster = image_cluster_dict["filelist"]
-
-        cluster_dir_name = f"cluster_{prediction_cluster_index}"
-        os.makedirs(workdir / dataset / cluster_dir_name, exist_ok=True)
-        clus_sfm_pairs = workdir / dataset / cluster_dir_name / "clu-pairs-sfm.txt"
-        make_complete_paris(clus_sfm_pairs, image_names_cluster)
-
-        clus_sfm_dir = workdir / dataset / cluster_dir_name / "sfm"
-        os.makedirs(clus_sfm_dir, exist_ok=True)
-
-
-        print(f"starting constructing {dataset} with images {image_names_cluster}")
-
-        # lightglue
-        clus_features = workdir / dataset / cluster_dir_name / "features.h5"
-        clus_matches = workdir / dataset / cluster_dir_name / "matches.h5"
-    
-        dense_matcher_conf = gim.confs["gim_dkm"]
-        clus_features, clus_matches = gim.main(dense_matcher_conf, clus_sfm_pairs, images_dir,  workdir / dataset / cluster_dir_name)
-        # extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=clus_features)
-        # match_features.main(matcher_conf, clus_sfm_pairs, features=clus_features, matches=clus_matches)
-        mapper_options = {"min_model_size": 3, "max_num_models": 50}
-        colmap_db_path, matches_size = hloc_reconstruction(clus_sfm_dir, images_dir, clus_sfm_pairs, clus_features, clus_matches,
-                                            image_list=image_names_cluster, min_match_score=0.04,
-                                            mapper_options = mapper_options)
-        
-        if matches_size < 10:
-            print(f'-- too few matches {matches_size}')
-            continue
-        ## mast
-        # images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
-        # colmap_db_path = sfm_dir / "colmap.db"
-        # create_empty_db(colmap_db_path)
-        # image_to_colmap = import_images_and_cameras(images_dir, colmap_db_path, pycolmap.CameraMode.AUTO,
-        #                                              image_list=image_names_cluster, image_path_to_idx=image_name_dict)
-        # colmap_image_pairs = run_mast_match_cluster(mast_cache_path, mast_model, images, image_names_cluster,
-        #                                              image_name_dict, image_to_colmap, colmap_db_path,
-        #                                              device, sfm_pairs, conf_thr=1.001, half=half, pixel_tol=0,
-        #                                              min_len_track=2, skip_geometric_verification=False)
-        # if len(colmap_image_pairs) == 0:
-        #     continue
-
-        time.sleep(4)
-
-        # print("verifying matches")
-        reconstruction_path = clus_sfm_dir / "reconstruction"
-        # pycolmap.verify_matches(colmap_db_path, clus_sfm_pairs)
-        glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
-        max_map = pycolmap.Reconstruction(reconstruction_path / "0")
-        print(max_map.summary())
-
-        for index, image in max_map.images.items():
-            prediction_index = filename_to_prdictions_index[image.name]
-            predictions[prediction_index].cluster_index = prediction_cluster_index
+    filename_to_index = {p.filename: idx for idx, p in enumerate(predictions)}
+    for map_index, cur_map in maps.items():
+        for index, image in cur_map.images.items():
+            prediction_index = filename_to_index[image.name]
+            predictions[prediction_index].cluster_index = map_index
             predictions[prediction_index].rotation = deepcopy(image.cam_from_world.rotation.matrix())
             predictions[prediction_index].translation = deepcopy(image.cam_from_world.translation)
             registered += 1
+    mapping_result_str = f'Dataset "{dataset}" -> Registered {registered} / {len(image_names)} images with {len(maps)} clusters'
+    print(mapping_result_str)
 
-        for image_name in image_names_cluster:
-            prediction_index = filename_to_prdictions_index[image_name]
-            if predictions[prediction_index].cluster_index is None:
-                predictions[prediction_index].cluster_index = prediction_cluster_index
 
-        prediction_cluster_index += 1
-        mapping_result_str = f'Dataset "{dataset}" -> Registered {registered} / {len(image_names)} images with {len(max_map.images)} clusters'
-        print(mapping_result_str)
+    # print("verifying matches")
+    # reconstruction_path = sfm_dir / "reconstruction"
+    # # pycolmap.verify_matches(colmap_db_path, clus_sfm_pairs)
+    # glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
+    # max_map = pycolmap.Reconstruction(reconstruction_path / "0")
+    # print(max_map.summary())
 
-        gc.collect()
-        time.sleep(1)
+    filename_to_prdictions_index = {p.filename: idx for idx, p in enumerate(predictions)}
+    registered = 0
+    # for map_index, cur_map in maps.items():
+    #     for index, image in cur_map.images.items():
+    #         prediction_index = filename_to_prdictions_index[image.name]
+    #         predictions[prediction_index].cluster_index = map_index
+    #         predictions[prediction_index].rotation = deepcopy(image.cam_from_world.rotation.matrix())
+    #         predictions[prediction_index].translation = deepcopy(image.cam_from_world.translation)
+    #         registered += 1
+    # mapping_result_str = f'Dataset "{dataset}" -> Registered {registered} / {len(image_names)} images with {len(maps)} clusters'
+    # print(mapping_result_str)
+
 
 
 array_to_str = lambda array: ';'.join([f"{x:.09f}" for x in array])
