@@ -37,17 +37,13 @@ class Roma(BaseModel):
         logger.info(f"Load Roma model done.")
 
     def _forward(self, data):
-        img0 = data["image0"].cpu().numpy().squeeze() * 255
-        img1 = data["image1"].cpu().numpy().squeeze() * 255
-        img0 = img0.transpose(1, 2, 0)
-        img1 = img1.transpose(1, 2, 0)
-        img0 = Image.fromarray(img0.astype("uint8"))
-        img1 = Image.fromarray(img1.astype("uint8"))
-        W_A, H_A = img0.size
-        W_B, H_B = img1.size
+        img0 = data["image0"]
+        img1 = data["image1"]
+        W_A, H_A = img0.shape[3], img0.shape[2]
+        W_B, H_B = img1.shape[3], img1.shape[2]
 
         # Match
-        warp, certainty = self.net.match(img0, img1, device=device)
+        warp, certainty = self.net.match(img0, img1)
         # Sample matches for estimation
         matches, certainty = self.net.sample(
             warp, certainty, num=self.conf["max_keypoints"]

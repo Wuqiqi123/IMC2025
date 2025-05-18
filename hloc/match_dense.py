@@ -47,7 +47,7 @@ confs = {
     'gim_dkm': {
         'output': 'matches-gim-dkm',
         'model': {
-            "checkpoints_path": "ckpts/gim_roma_100h.ckpt",
+            "checkpoints_path": "ckpts/gim_dkm_100h.ckpt",
             'name': 'dkm',
             'weights': 'gim_dkm_100h.ckpt'
         },
