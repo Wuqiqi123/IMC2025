@@ -47,6 +47,7 @@ confs = {
     'gim_dkm': {
         'output': 'matches-gim-dkm',
         'model': {
+            "checkpoints_path": "ckpts/gim_roma_100h.ckpt",
             'name': 'dkm',
             'weights': 'gim_dkm_100h.ckpt'
         },
@@ -77,9 +78,10 @@ confs = {
     "roma": {
         "output": "matches-roma",
         "model": {
+            "checkpoints_path": "ckpts/gim_roma_100h.ckpt",
             "name": "roma",
             "weights": "outdoor",
-            "max_keypoints": 2000,
+            "max_keypoints": 6000,
             "match_threshold": 0.2,
         },
         "preprocessing": {
@@ -90,6 +92,7 @@ confs = {
             "height": 560,
             "dfactor": 14,
         },
+
         'max_error': 2,  # max error for assigned keypoints (in px)
         'cell_size': 8,  # size of quantization patch (max 1 kp/patch)
     },

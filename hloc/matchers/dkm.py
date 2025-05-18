@@ -42,8 +42,7 @@ class DKM(BaseModel):
         self.h = 672
         self.w = 896
         model = DKMv3(None, self.h, self.w, upsample_preds=True)
-
-        checkpoints_path = join('ckpts', conf['weights'])
+        checkpoints_path = conf["checkpoints_path"]
         state_dict = torch.load(checkpoints_path, map_location='cpu')
         if 'state_dict' in state_dict.keys(): state_dict = state_dict['state_dict']
         for k in list(state_dict.keys()):

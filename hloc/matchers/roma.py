@@ -4,9 +4,9 @@ import subprocess
 import logging
 import torch
 from PIL import Image
-from ..utils.base_model import BaseModel
+from hloc.utils.base_model import BaseModel
 
-from romatch.models.model_zoo.roma_models import roma_model
+from hloc.networks.roma.roma import RoMa
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger = logging.getLogger(__name__)
@@ -15,55 +15,25 @@ logger = logging.getLogger(__name__)
 class Roma(BaseModel):
     default_conf = {
         "name": "two_view_pipeline",
-        "model_name": "roma_outdoor.pth",
-        "model_utils_name": "dinov2_vitl14_pretrain.pth",
-        "max_keypoints": 3000,
+        "max_keypoints": 6000,
         'max_num_matches': None,
     }
     required_inputs = [
         "image0",
         "image1",
     ]
-    weight_urls = {
-        "roma": {
-            "roma_outdoor.pth": "https://github.com/Parskatt/storage/releases/download/roma/roma_outdoor.pth",
-            "roma_indoor.pth": "https://github.com/Parskatt/storage/releases/download/roma/roma_indoor.pth",
-        },
-        "dinov2_vitl14_pretrain.pth": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_pretrain.pth",
-    }
 
     # Initialize the line matcher
     def _init(self, conf):
-        model_path = Path("ckpts") / conf["model_name"]
-        dinov2_weights = Path("ckpts") / conf["model_utils_name"]
+        self.net = RoMa(img_size=[672])
+        checkpoints_path = conf["checkpoints_path"]
+        state_dict = torch.load(checkpoints_path, map_location='cpu')
+        if 'state_dict' in state_dict.keys(): state_dict = state_dict['state_dict']
+        for k in list(state_dict.keys()):
+            if k.startswith('model.'):
+                state_dict[k.replace('model.', '', 1)] = state_dict.pop(k)
 
-        # Download the model.
-        if not model_path.exists():
-            model_path.parent.mkdir(exist_ok=True)
-            link = self.weight_urls["roma"][conf["model_name"]]
-            cmd = ["wget", link, "-O", str(model_path)]
-            logger.info(f"Downloading the Roma model with `{cmd}`.")
-            subprocess.run(cmd, check=True)
-
-        if not dinov2_weights.exists():
-            dinov2_weights.parent.mkdir(exist_ok=True)
-            link = self.weight_urls[conf["model_utils_name"]]
-            cmd = ["wget", link, "-O", str(dinov2_weights)]
-            logger.info(f"Downloading the dinov2 model with `{cmd}`.")
-            subprocess.run(cmd, check=True)
-
-        logger.info(f"Loading Roma model...")
-        # load the model
-        weights = torch.load(model_path, map_location="cpu")
-        dinov2_weights = torch.load(dinov2_weights, map_location="cpu")
-
-        self.net = roma_model(
-            resolution=(14 * 8 * 6, 14 * 8 * 6),
-            upsample_preds=False,
-            weights=weights,
-            dinov2_weights=dinov2_weights,
-            device=device,
-        )
+        self.net.load_state_dict(state_dict)
         logger.info(f"Load Roma model done.")
 
     def _forward(self, data):
