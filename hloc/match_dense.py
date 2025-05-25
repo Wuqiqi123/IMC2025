@@ -96,6 +96,25 @@ confs = {
         'max_error': 2,  # max error for assigned keypoints (in px)
         'cell_size': 8,  # size of quantization patch (max 1 kp/patch)
     },
+    "dad_roma": {
+        "output": "matches-dad_roma",
+        "model": {
+            "name": "dad_roma",
+            "weights": "outdoor",
+            "dad_path": "ckpts/dad.pth",
+            "checkpoints_path": "ckpts/gim_roma_100h.ckpt",
+            "max_keypoints": 3000,
+            "match_threshold": 0.2,
+        },
+        "preprocessing": {
+            "grayscale": False,
+            "force_resize": False,
+            "resize_max": 1024,
+            "width": 320,
+            "height": 240,
+            "dfactor": 8,
+        },
+    },
 }
 
 

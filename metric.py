@@ -485,24 +485,24 @@ def score(
         # full table               
         model_table = []
         err_table = []
-        mAA_table = np.zeros((lg, lu))
-        cluster_table = np.zeros((lg, lu))
-        gt_scene_sum_table = np.zeros((lg, lu))
-        user_scene_sum_table = np.zeros((lg, lu))
+        mAA_table = np.full((lg, lu), -1).astype(float)
+        cluster_table = np.full((lg, lu), -1).astype(int)
+        gt_scene_sum_table = np.full((lg, lu), -1).astype(np.float64)
+        user_scene_sum_table = np.full((lg, lu), -1).astype(np.float64)
 
         # public split table               
         err_table_mask_a = []
-        mAA_table_mask_a = np.zeros((lg, lu))
-        cluster_table_mask_a = np.zeros((lg, lu))
-        gt_scene_sum_table_mask_a = np.zeros((lg, lu))
-        user_scene_sum_table_mask_a = np.zeros((lg, lu))
+        mAA_table_mask_a = np.full((lg, lu), -1).astype(float)
+        cluster_table_mask_a = np.full((lg, lu), -1).astype(int)
+        gt_scene_sum_table_mask_a = np.full((lg, lu), -1).astype(np.float64)
+        user_scene_sum_table_mask_a = np.full((lg, lu), -1).astype(np.float64)
 
         # private split table               
         err_table_mask_b = []
-        mAA_table_mask_b = np.zeros((lg, lu))
-        cluster_table_mask_b = np.zeros((lg, lu))
-        gt_scene_sum_table_mask_b = np.zeros((lg, lu))
-        user_scene_sum_table_mask_b = np.zeros((lg, lu))
+        mAA_table_mask_b = np.full((lg, lu), -1).astype(float)
+        cluster_table_mask_b = np.full((lg, lu), -1).astype(int)
+        gt_scene_sum_table_mask_b = np.full((lg, lu), -1).astype(np.float64)
+        user_scene_sum_table_mask_b = np.full((lg, lu), -1).astype(np.float64)
 
         # best full
         best_gt_scene = []
