@@ -10,7 +10,7 @@ from pathlib import Path
 COLMAP_PATH = os.environ.get("COLMAP_PATH", 'colmap') # 'colmap is default value
 
 def run_incremental_model_refiner(
-    deep_sfm_dir, after_refine_dir, no_filter_pts=False, image_path="/", colmap_configs=None, verbose=True, refine_3D_pts_only=False, filter_threshold=2, use_pba=False
+    deep_sfm_dir, after_refine_dir, no_filter_pts=False, image_path="/", colmap_configs=None, verbose=True, filter_threshold=2
 ):
     logging.info("Running the bundle adjuster.")
 
@@ -38,20 +38,12 @@ def run_incremental_model_refiner(
         str('1')
     ]
 
-    if use_pba:
-        # NOTE: PBA does not allow share intrinsics or fix extrinsics, and only allow SIMPLE_RADIAL camera model
-        cmd += [
-            "--Mapper.ba_global_use_pba",
-            "1"
-        ]
-    else:
-        cmd += [
-            "--image_list_path",
-            str(osp.join(deep_sfm_dir, 'fixed_images.txt')),
-        ]
-        pass
+    cmd += [
+        "--image_list_path",
+        str(osp.join(deep_sfm_dir, 'fixed_images.txt')),
+    ]
 
-    if (colmap_configs is not None and colmap_configs["no_refine_intrinsics"] is True) or refine_3D_pts_only:
+    if (colmap_configs is not None and colmap_configs["no_refine_intrinsics"] is True):
         cmd += [
             "--Mapper.ba_refine_focal_length",
             "0",
@@ -62,17 +54,6 @@ def run_incremental_model_refiner(
     if colmap_configs is not None and 'n_threads' in colmap_configs:
         cmd += ["--Mapper.num_threads", str(min(multiprocessing.cpu_count(), colmap_configs['n_threads'] if 'n_threads' in colmap_configs else 16))]
     
-    if refine_3D_pts_only:
-        if "--image_list_path" not in cmd:
-            cmd += [
-                "--image_list_path",
-                str(osp.join(deep_sfm_dir, 'fixed_images.txt')),
-            ] # For triangulation, must fix!
-
-        cmd += [
-            "--Mapper.fix_existing_images",
-            "1",
-        ]
 
     if verbose:
         logging.info(' '.join(cmd))
@@ -96,9 +77,7 @@ def main(
     no_filter_pts=False,
     image_path="/",
     colmap_configs=None,
-    refine_3D_pts_only=False,
     filter_threshold=2,
-    use_pba=False,
     verbose=True,
 ):
     assert Path(deep_sfm_dir).exists(), deep_sfm_dir
@@ -112,9 +91,7 @@ def main(
             no_filter_pts,
             image_path,
             colmap_configs=colmap_configs,
-            refine_3D_pts_only=refine_3D_pts_only,
             filter_threshold=filter_threshold,
-            use_pba=use_pba,
             verbose=verbose
         )
     return success
