@@ -11,7 +11,8 @@ import torch
 import torch.nn as nn
 from torchvision import models
 import logging
-from roi_align.roi_align import RoIAlign
+# from roi_align.roi_align import RoIAlign
+from torchvision.ops import roi_align
 
 from pathlib import Path
 
@@ -75,7 +76,7 @@ class S2DNet(BaseModel):
             self.hypercolumn_layers[:self.conf.num_layers]
         self.zoomin_strategy = self.conf.zoomin_strategy
         self.window_size = self.conf.window_size
-        self.roi_align_custom = RoIAlign(self.window_size, self.window_size, transform_fpcoor=False)
+        # self.roi_align_custom = RoIAlign(self.window_size, self.window_size, transform_fpcoor=False)
 
         self.layer_to_index = {k: v for v, k in enumerate(vgg16_layers.keys())}
         self.hypercolumn_indices = [
@@ -188,7 +189,8 @@ class S2DNet(BaseModel):
             boxes = torch.cat([center - redius, center + redius], dim=-1).to(torch.float32) # L*5
 
             if scales is not None:
-                unfold_features = self.roi_align_custom(features, boxes, bids.to(torch.int32))
+                unfold_features = roi_align(features, boxes, self.window_size)
+                # unfold_features = self.roi_align_custom(features, boxes, bids.to(torch.int32))
             else:
                 unfold_features = features[..., crop_size//2 -redius: crop_size//2+redius+1, crop_size//2-redius: crop_size//2+redius+1]
 
@@ -202,5 +204,6 @@ class S2DNet(BaseModel):
             if scales is not None:
                 redius *= scales[:, None]
             boxes = torch.cat([sample_points - redius, sample_points + redius], dim=-1).to(torch.float32) # L*5
-            unfold_features = self.roi_align_custom(features, boxes, bids.to(torch.int32))
+            # unfold_features = self.roi_align_custom(features, boxes, bids.to(torch.int32))
+            unfold_features = roi_align(features, boxes, self.window_size)
         return unfold_features

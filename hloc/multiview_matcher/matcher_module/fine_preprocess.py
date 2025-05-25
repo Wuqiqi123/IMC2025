@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from einops.einops import rearrange
-from roi_align.roi_align import RoIAlign
+# from roi_align.roi_align import RoIAlign
+from torchvision.ops import roi_align
     
 class FinePreprocess(nn.Module):
     def __init__(self, config):
@@ -14,7 +15,7 @@ class FinePreprocess(nn.Module):
 
         self.sparse = config['sparse']
         
-        self.roi_align_custom = RoIAlign(self.crop_size, self.crop_size, transform_fpcoor=False)
+        # self.roi_align_custom = RoIAlign(self.crop_size, self.crop_size, transform_fpcoor=False)
             
         self.apply(self._init_weights)
         
@@ -102,5 +103,6 @@ class FinePreprocess(nn.Module):
         if scales is not None:
             redius *= scales[:, None]
         boxes = torch.cat([bids, keypoints - redius, keypoints + redius], dim=-1).to(torch.float32) # L*5
-        unfold_features = self.roi_align_custom(features, boxes[:,1:], bids.to(torch.int32))
+        # unfold_features = self.roi_align_custom(features, boxes[:,1:], bids.to(torch.int32))
+        unfold_features = roi_align(features, boxes[:,1:], self.crop_size)
         return unfold_features
