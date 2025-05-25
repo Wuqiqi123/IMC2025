@@ -9,7 +9,7 @@ from hloc.utils.data_io import dict_to_cuda
 
 logger = logging.getLogger(__name__)
 
-from hloc.MultiviewMatcher.MultiviewMatcher import MultiviewMatcher
+from hloc.multiview_matcher.multiview_matcher import MultiviewMatcher
 from hloc.dataset.construct_matching_data import MatchingMultiviewData
 
 
