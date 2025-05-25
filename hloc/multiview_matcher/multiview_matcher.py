@@ -13,11 +13,10 @@ from .matcher_module import LocalFeatureTransformer, FinePreprocess
 from .utils.fine_matching import FineMatching
 
 class MultiviewMatcher(nn.Module):
-    def __init__(self, config, profiler=None, debug=False, test=False, plotting_vis=None, test_speed=False):
+    def __init__(self, config, debug=False, test=False, plotting_vis=None, test_speed=False):
         super().__init__()
         # Misc
         self.config = config
-        self.profiler = profiler
         self.debug = debug
         self.plotting_vis = plotting_vis
         self.test_speed = test_speed
@@ -132,37 +131,37 @@ class MultiviewMatcher(nn.Module):
 
             if self.training or not chunk_backbone_img:
                 assert isinstance(data["images"], torch.Tensor)
-                with self.profiler.record_function("MultiviewMatcher/fine-process"):
-                    image_patches, sparse = self.fine_preprocess(
-                        data["images"],
-                        all_sample_points,
-                        img_idxs,
-                        data,
-                        scales_relative_current_step,
-                    )  # B * n_view * n_track * WW * C
-                    
-                    if sparse:
-                        W = int(image_patches.shape[-2] ** 0.5)
-                        image_patches = rearrange(
-                            image_patches, "b n t (h w) c -> (b n t) c h w", h=W, w=W
-                        )
+                image_patches, sparse = self.fine_preprocess(
+                    data["images"],
+                    all_sample_points,
+                    img_idxs,
+                    data,
+                    scales_relative_current_step,
+                )  # B * n_view * n_track * WW * C
+                
+                if sparse:
+                    W = int(image_patches.shape[-2] ** 0.5)
+                    image_patches = rearrange(
+                        image_patches, "b n t (h w) c -> (b n t) c h w", h=W, w=W
+                    )
+
 
                 # Extract features:
-                with self.profiler.record_function("MultiviewMatcher/backbone"):
-                    # Images: B * N_img * 1 * H * W
-                    features = self.backbone(
-                        image_patches,
-                        rearrange(scales_relative_current_step, "b n t -> (b n t)") if self.enable_multiview_scale_align and not self.training else None,
-                        sparse,
-                        rearrange(all_sample_points, "b n t c -> (b n t) c"),
-                        rearrange(img_idxs, "b n t -> (b n t)"),
-                    )  # [(B * n_view * n_track) * C * H * W]
-                    features = rearrange(
-                        features[-1],
-                        "(b n t) c h w -> b t n (h w) c",
-                        t=n_track,
-                        n=n_view,
-                    )
+                # Images: B * N_img * 1 * H * W
+                features = self.backbone(
+                    image_patches,
+                    rearrange(scales_relative_current_step, "b n t -> (b n t)") if self.enable_multiview_scale_align and not self.training else None,
+                    sparse,
+                    rearrange(all_sample_points, "b n t c -> (b n t) c"),
+                    rearrange(img_idxs, "b n t -> (b n t)"),
+                )  # [(B * n_view * n_track) * C * H * W]
+                features = rearrange(
+                    features[-1],
+                    "(b n t) c h w -> b t n (h w) c",
+                    t=n_track,
+                    n=n_view,
+                )
+
 
                 features = _extract_backbone_feats(
                     features, self.config["backbone"]
@@ -191,31 +190,32 @@ class MultiviewMatcher(nn.Module):
                         torch.cuda.synchronize()
                         crop_img_t0 = time()
 
-                    with self.profiler.record_function("MultiviewMatcher/fine-process"):
-                        (
-                            image_patches,
-                            image_patch_belonging_mask,
-                            sparse,
-                        ) = self.fine_preprocess.forward_chunked(
-                            data["images"][:, img_idx]
-                            if isinstance(data["images"], torch.Tensor)
-                            else data["images"][img_idx],
-                            img_idx,
-                            all_sample_points,
-                            img_idxs,
-                            data,
-                            scales_relative_current_step,
-                            full_feature_map_patches_num,
-                        )  # M * WW * C
 
-                        if image_patches.shape[0] == 0 or image_patch_belonging_mask.sum() == 0:
-                            continue
+                    (
+                        image_patches,
+                        image_patch_belonging_mask,
+                        sparse,
+                    ) = self.fine_preprocess.forward_chunked(
+                        data["images"][:, img_idx]
+                        if isinstance(data["images"], torch.Tensor)
+                        else data["images"][img_idx],
+                        img_idx,
+                        all_sample_points,
+                        img_idxs,
+                        data,
+                        scales_relative_current_step,
+                        full_feature_map_patches_num,
+                    )  # M * WW * C
 
-                        if sparse:
-                            W = int(image_patches.shape[-2] ** 0.5)
-                            image_patches = rearrange(
-                                image_patches, "m (h w) c -> m c h w", h=W, w=W
-                            )  # NOTE: M is (b n t) order
+                    if image_patches.shape[0] == 0 or image_patch_belonging_mask.sum() == 0:
+                        continue
+
+                    if sparse:
+                        W = int(image_patches.shape[-2] ** 0.5)
+                        image_patches = rearrange(
+                            image_patches, "m (h w) c -> m c h w", h=W, w=W
+                        )  # NOTE: M is (b n t) order
+
 
                     if self.test_speed:
                         torch.cuda.synchronize()
@@ -223,21 +223,20 @@ class MultiviewMatcher(nn.Module):
                         crop_img_time += (feat_extract_t0 - crop_img_t0)
 
                     # Extract features:
-                    with self.profiler.record_function("MultiviewMatcher/backbone"):
                         # Images: B * N_img * 1 * H * W
-                        features = self.backbone(
-                            image_patches,
-                            rearrange(scales_relative_current_step, "b n t -> (b n t)")[
-                                image_patch_belonging_mask
-                            ] if self.enable_multiview_scale_align else None,
-                            sparse,
-                            rearrange(all_sample_points, "b n t c -> (b n t) c")[
-                                image_patch_belonging_mask
-                            ], 
-                            None
-                        )  # [M * C * H * W]
-                        features = rearrange(features[-1], "m c h w -> m (h w) c")
-                        image_patches = rearrange(image_patches, "m c h w -> m h w c") if self.plotting_vis is not None else None
+                    features = self.backbone(
+                        image_patches,
+                        rearrange(scales_relative_current_step, "b n t -> (b n t)")[
+                            image_patch_belonging_mask
+                        ] if self.enable_multiview_scale_align else None,
+                        sparse,
+                        rearrange(all_sample_points, "b n t c -> (b n t) c")[
+                            image_patch_belonging_mask
+                        ], 
+                        None
+                    )  # [M * C * H * W]
+                    features = rearrange(features[-1], "m c h w -> m (h w) c")
+                    image_patches = rearrange(image_patches, "m c h w -> m h w c") if self.plotting_vis is not None else None
 
                     if self.test_speed:
                         torch.cuda.synchronize()
@@ -314,72 +313,72 @@ class MultiviewMatcher(nn.Module):
                 ]
 
                 # Perform multiview transformer:
-                with self.profiler.record_function("MultiviewMatcher/transformer"):
-                    if self.test_speed:
-                        torch.cuda.synchronize()
-                        transform_t0 = time()
-                    if self.config["multiview_transform"]["enable"]:
-                        (
-                            features_crop_reference_transformed,
-                            features_crop_query_transformed,
-                        ) = self.fine_transformer(
-                            features_crop_reference_super_patch,
-                            features_crop_query[:, i : (i + num_track), :chunk_view-1],
-                            data,
-                            query_mask=data["track_valid_mask"].transpose(1, 2)[
-                                :, i : (i + num_track), :chunk_view-1
-                            ]
-                            if "track_valid_mask" in data
-                            else None,
-                        )
-                    else:
-                        features_crop_reference_transformed = features_crop_reference_super_patch
-                        features_crop_query_transformed = features_crop_query[:, i : (i + num_track), :chunk_view-1]
-
-                    if self.test_speed:
-                        torch.cuda.synchronize()
-                        transform_t1 = time()
-                        transform_feat_time += (transform_t1 - transform_t0)
-
-                # Perform multiview refinement:
-                with self.profiler.record_function("MultiviewMatcher/matching"):
-                    if self.test_speed:
-                        torch.cuda.synchronize()
-                        matching_t0 = time()
-
+                if self.test_speed:
+                    torch.cuda.synchronize()
+                    transform_t0 = time()
+                if self.config["multiview_transform"]["enable"]:
                     (
-                        query_points_refined,
-                        reference_points_refined,
-                        std,
-                        heatmap_all
-                    ) = self.fine_matching(
                         features_crop_reference_transformed,
                         features_crop_query_transformed,
-                        data["query_points"][:, i : (i + num_track)],
-                        current_reference_location.transpose(1, 2)[
-                            :, i : (i + num_track), :chunk_view-1
-                        ],
+                    ) = self.fine_transformer(
+                        features_crop_reference_super_patch,
+                        features_crop_query[:, i : (i + num_track), :chunk_view-1],
                         data,
-                        scales_relative_reference=scales_relative_current_step.transpose(1,2)[:, i : (i + num_track), 1:chunk_view] if self.enable_multiview_scale_align else None,
-                        track_mask=data["track_valid_mask"].transpose(1, 2)[
+                        query_mask=data["track_valid_mask"].transpose(1, 2)[
                             :, i : (i + num_track), :chunk_view-1
-                        ],
-                        query_movable_mask=data["query_movable_mask"][
-                            :, i : (i + num_track)
-                        ] if 'query_movable_mask' in data else None,
-                        keypoint_relocalized_offset=data['keypoint_relocalized_offset'][:, i : (i + num_track)] if 'keypoint_relocalized_offset' in data else None,
-                        return_all_ref_heatmap=True if self.plotting_vis is 'heatmap_patch' else False,
-                    )  # B * n_view-1 * n_track * 2
-                    query_points_refined_chunked.append(query_points_refined)
-                    reference_points_refined_chunked.append(F.pad(reference_points_refined, pad=(0,0,0,0,0,n_view-chunk_view), value=0))
-                    std_chunked.append(F.pad(std, pad=(0,0,0,n_view-chunk_view), value=0))
-                    transformed_features.append(torch.cat([features_crop_reference_transformed[:, :, None], F.pad(features_crop_query_transformed, pad=(0,0,0,0,0,n_view-chunk_view), value=0)], dim=2)) if self.plotting_vis is 'feature_patch' else None
-                    heatmap_ref_all.append(F.pad(heatmap_all, pad=(0,0,0,0,0,0,1,n_view-chunk_view), value=0)) if self.plotting_vis is 'heatmap_patch' else None
+                        ]
+                        if "track_valid_mask" in data
+                        else None,
+                    )
+                else:
+                    features_crop_reference_transformed = features_crop_reference_super_patch
+                    features_crop_query_transformed = features_crop_query[:, i : (i + num_track), :chunk_view-1]
 
-                    if self.test_speed:
-                        torch.cuda.synchronize()
-                        matching_t1 = time()
-                        matching_time += (matching_t1 - matching_t0)
+                if self.test_speed:
+                    torch.cuda.synchronize()
+                    transform_t1 = time()
+                    transform_feat_time += (transform_t1 - transform_t0)
+
+
+                # Perform multiview refinement:
+                if self.test_speed:
+                    torch.cuda.synchronize()
+                    matching_t0 = time()
+
+                (
+                    query_points_refined,
+                    reference_points_refined,
+                    std,
+                    heatmap_all
+                ) = self.fine_matching(
+                    features_crop_reference_transformed,
+                    features_crop_query_transformed,
+                    data["query_points"][:, i : (i + num_track)],
+                    current_reference_location.transpose(1, 2)[
+                        :, i : (i + num_track), :chunk_view-1
+                    ],
+                    data,
+                    scales_relative_reference=scales_relative_current_step.transpose(1,2)[:, i : (i + num_track), 1:chunk_view] if self.enable_multiview_scale_align else None,
+                    track_mask=data["track_valid_mask"].transpose(1, 2)[
+                        :, i : (i + num_track), :chunk_view-1
+                    ],
+                    query_movable_mask=data["query_movable_mask"][
+                        :, i : (i + num_track)
+                    ] if 'query_movable_mask' in data else None,
+                    keypoint_relocalized_offset=data['keypoint_relocalized_offset'][:, i : (i + num_track)] if 'keypoint_relocalized_offset' in data else None,
+                    return_all_ref_heatmap=True if self.plotting_vis is 'heatmap_patch' else False,
+                )  # B * n_view-1 * n_track * 2
+                query_points_refined_chunked.append(query_points_refined)
+                reference_points_refined_chunked.append(F.pad(reference_points_refined, pad=(0,0,0,0,0,n_view-chunk_view), value=0))
+                std_chunked.append(F.pad(std, pad=(0,0,0,n_view-chunk_view), value=0))
+                transformed_features.append(torch.cat([features_crop_reference_transformed[:, :, None], F.pad(features_crop_query_transformed, pad=(0,0,0,0,0,n_view-chunk_view), value=0)], dim=2)) if self.plotting_vis is 'feature_patch' else None
+                heatmap_ref_all.append(F.pad(heatmap_all, pad=(0,0,0,0,0,0,1,n_view-chunk_view), value=0)) if self.plotting_vis is 'heatmap_patch' else None
+
+                if self.test_speed:
+                    torch.cuda.synchronize()
+                    matching_t1 = time()
+                    matching_time += (matching_t1 - matching_t0)
+
                 
                 i += num_track
 
