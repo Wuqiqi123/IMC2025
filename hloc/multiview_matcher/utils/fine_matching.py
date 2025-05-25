@@ -7,6 +7,10 @@ from kornia.geometry.subpix import dsnt
 from kornia.utils.grid import create_meshgrid
 from time import time
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class FineMatching(nn.Module):
     """FineMatching with s2d paradigm
     NOTE: use a separate class for d2d (sprase/dense flow) ?
