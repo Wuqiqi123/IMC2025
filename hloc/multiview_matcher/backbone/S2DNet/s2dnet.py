@@ -111,7 +111,7 @@ class S2DNet(BaseModel):
             self.scales = self.scales[:1]
 
         if conf.pretrained == 's2dnet':
-            path = Path(__file__).parent / "checkpoints" / 's2dnet_weights.pth'
+            path = Path("ckpts/s2dnet_weights.pth")
             logger.info(f'Loading S2DNet checkpoint at {path}.')
             if not path.exists():
                 logger.info('Downloading S2DNet weights.')

@@ -10,7 +10,7 @@ from pathlib import Path
 COLMAP_PATH = os.environ.get("COLMAP_PATH", 'colmap') # 'colmap is default value
 
 def run_incremental_model_refiner(
-    deep_sfm_dir, after_refine_dir, no_filter_pts=False, image_path="/", colmap_configs=None, verbose=True, filter_threshold=2
+    deep_sfm_dir, after_refine_dir, image_path="/", colmap_configs=None, verbose=True, filter_threshold=2
 ):
     logging.info("Running the bundle adjuster.")
 
@@ -19,7 +19,7 @@ def run_incremental_model_refiner(
     threshold = filter_threshold
     cmd = [
         COLMAP_PATH,
-        "incremental_model_refiner_no_filter_pts" if no_filter_pts else "incremental_model_refiner",
+        "incremental_model_refiner",
         "--input_path",
         str(deep_sfm_model_dir),
         "--output_path",
@@ -74,7 +74,6 @@ def run_incremental_model_refiner(
 def main(
     deep_sfm_dir,
     after_refine_dir,
-    no_filter_pts=False,
     image_path="/",
     colmap_configs=None,
     filter_threshold=2,
@@ -88,7 +87,6 @@ def main(
     success = run_incremental_model_refiner(
             deep_sfm_dir,
             after_refine_dir,
-            no_filter_pts,
             image_path,
             colmap_configs=colmap_configs,
             filter_threshold=filter_threshold,

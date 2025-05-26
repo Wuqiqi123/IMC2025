@@ -41,7 +41,6 @@ class Dad(BaseModel):
         self.matcher.load_state_dict(state_dict)
         logger.info(f"Load Roma model done.")
 
-        self.matcher.upsample_res = self.conf["upsample_res"]
         self.matcher.symmetric = False
 
 

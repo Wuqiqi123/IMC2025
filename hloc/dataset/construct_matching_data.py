@@ -290,7 +290,7 @@ class MatchingMultiviewData(Dataset):
                     data[key_new] = [value]
 
         for key, value in data.items():
-            if key is 'images':
+            if key == 'images':
                 continue
             data[key] = torch.stack(value, dim=0)  # N * ..
         return data

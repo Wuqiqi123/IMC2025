@@ -2,7 +2,7 @@ import math
 import warnings
 from pathlib import Path
 from typing import Optional
-from dad.types import Benchmark, Detector, Matcher
+from hloc.networks.dad.types import Benchmark, Detector, Matcher
 import torch.nn as nn
 import cv2
 import numpy as np

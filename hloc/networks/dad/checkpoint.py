@@ -4,7 +4,7 @@ from torch.nn.parallel.distributed import DistributedDataParallel
 import gc
 from pathlib import Path
 import dad
-from dad.types import Detector
+from hloc.networks.dad.types import Detector
 
 class CheckPoint:
     def __init__(self, dir):

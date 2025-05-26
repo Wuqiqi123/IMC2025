@@ -24,11 +24,11 @@ class CoarseColmapDataset(Dataset):
     def __init__(
         self,
         args,
+        image_dir,
         image_lists,
         covis_pairs,
         colmap_results_dir,  # before refine results
         save_dir,
-        only_basename_in_colmap=False,
         vis_path=None,
         verbose=True
     ):
@@ -40,6 +40,7 @@ class CoarseColmapDataset(Dataset):
         colmap_results_dir: The directory contains images.bin(.txt) point3D.bin(.txt)...
         """
         super().__init__()
+        self.image_dir = image_dir
         self.img_list = image_lists
 
         self.colmap_results_dir = colmap_results_dir
@@ -84,7 +85,7 @@ class CoarseColmapDataset(Dataset):
         (
             self.frameId2colmapID_dict,
             self.colmapID2frameID_dict,
-        ) = self.get_frameID2colmapID(self.frame_ids, self.img_list, self.colmap_images, only_basename_in_colmap=only_basename_in_colmap)
+        ) = self.get_frameID2colmapID(self.frame_ids, self.img_list, self.colmap_images)
 
         # Get intrinsic and extrinsics:
         self.image_intrin_extrins = {} # {img_id: {'extrin': [R, t], 'intrin: 3*3}}
@@ -120,7 +121,7 @@ class CoarseColmapDataset(Dataset):
             self.img_dict = {}
             for img in image_lists:
                 self.img_dict[img] = read_rgb(
-                    img,
+                    image_dir / img,
                     (self.img_resize,) if self.img_resize is not None else None,
                     resize_no_larger_than=True,
                     pad_to=None,
@@ -214,13 +215,12 @@ class CoarseColmapDataset(Dataset):
                 }
             )
 
-    def get_frameID2colmapID(self, frame_IDs, frame_names, colmap_images, only_basename_in_colmap=False):
+    def get_frameID2colmapID(self, frame_IDs, frame_names, colmap_images):
         # frame_id equal to frame_idx
         frameID2colmapID_dict = {}
         colmapID2frameID_dict = {}
         for frame_ID in frame_IDs:
             frame_name = frame_names[frame_ID]
-            frame_name = osp.basename(frame_name) if only_basename_in_colmap else frame_name
 
             for colmap_image in colmap_images.values():
                 if frame_name == colmap_image.name:
@@ -370,7 +370,7 @@ class CoarseColmapDataset(Dataset):
             img_scale = self.img_dict[img_name]
         else:
             img_scale = read_rgb(
-                img_name,
+                self.image_dir / img_name,
                 (self.img_resize,) if self.img_resize is not None else None,
                 resize_no_larger_than=True,
                 # pad_to=self.img_resize,
@@ -386,7 +386,7 @@ class CoarseColmapDataset(Dataset):
             "f_name": img_name,
             "img_name": img_name,
             "frameID": idx,
-            "img_path": [img_name],
+            "img_path": [self.image_dir / img_name],
         }
         return data
 

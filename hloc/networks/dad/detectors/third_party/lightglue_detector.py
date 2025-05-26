@@ -2,10 +2,10 @@ from pathlib import Path
 from typing import Union
 import torch
 from .lightglue.utils import load_image
-from dad.utils import (
+from hloc.networks.dad.utils import (
     get_best_device,
 )
-from dad.types import Detector
+from hloc.networks.dad.types import Detector
 
 
 class LightGlueDetector(Detector):

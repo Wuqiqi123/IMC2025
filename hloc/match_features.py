@@ -85,6 +85,16 @@ confs = {
         "output": "matches-adalam",
         "model": {"name": "adalam"},
     },
+    "roma": {
+        "output": "matches-roma",
+        "model": {
+            "checkpoints_path": "ckpts/gim_roma_100h.ckpt",
+            "name": "roma",
+            "weights": "outdoor",
+            "max_keypoints": 6000,
+            "match_threshold": 0.2,
+        },
+    },
 }
 
 

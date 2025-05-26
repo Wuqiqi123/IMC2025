@@ -114,6 +114,18 @@ confs = {
             "resize_max": 1600,
         },
     },
+    "dad": {
+        "output": "feats-dad",
+        "model": {"name": "dad"},
+        "preprocessing": {
+            "grayscale": False,
+            "force_resize": False,
+            "resize_max": 1024,
+            "width": 320,
+            "height": 240,
+            "dfactor": 8,
+        },
+    },
     "aliked-n16": {
         "output": "feats-aliked-n16",
         "model": {

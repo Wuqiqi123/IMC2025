@@ -104,5 +104,5 @@ class FinePreprocess(nn.Module):
             redius *= scales[:, None]
         boxes = torch.cat([bids, keypoints - redius, keypoints + redius], dim=-1).to(torch.float32) # L*5
         # unfold_features = self.roi_align_custom(features, boxes[:,1:], bids.to(torch.int32))
-        unfold_features = roi_align(features, boxes[:,1:], self.crop_size)
+        unfold_features = roi_align(features, boxes, self.crop_size)
         return unfold_features

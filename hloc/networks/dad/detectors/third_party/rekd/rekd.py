@@ -6,9 +6,9 @@ import cv2
 import numpy as np
 
 from . import geometry_tools as geo_tools
-from dad.utils import get_best_device
+from hloc.networks.dad.utils import get_best_device
 
-from dad.types import Detector
+from hloc.networks.dad.types import Detector
 
 
 def upsample_pyramid(image, upsampled_levels, scale_factor_levels):

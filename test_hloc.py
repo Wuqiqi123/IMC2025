@@ -41,6 +41,13 @@ from hloc import (
     visualization,
     pairs_from_exhaustive,
 )
+from hloc.utils.read_write_model import (
+    read_images_binary,
+    read_cameras_binary,
+    read_points3d_binary,
+    qvec2rotmat
+)
+
 import os.path as osp
 from shutil import rmtree
 from hloc.dataset.coarse_sfm_refinement_dataset import CoarseColmapDataset
@@ -158,18 +165,15 @@ def run_image_reregistration(
 
 
 def post_optimization(
+    image_dir,
     image_lists,
     covis_pairs_pth,
     colmap_coarse_dir,
     refined_model_save_dir,
     match_out_pth,
-    chunk_size=6000,
-    img_resize=None,
+    chunk_size=2000,
+    img_resize=1200,
     img_preload=False,
-    fine_match_use_ray=False,  # Use ray for fine match
-    ray_cfg=None,
-    colmap_configs=None,
-    only_basename_in_colmap=False,
     visualize_dir=None,
     vis3d_pth=None,
     verbose=True
@@ -203,7 +207,7 @@ def post_optimization(
         "fine_matcher": {
             "model": {
                 "cfg_path": ["config/multiview_refinement_matching.yaml"],
-                "weight_path": "weight/multiview_matcher.ckpt",
+                "weight_path": ["ckpts/multiview_matcher.ckpt"],
                 "seed": 666,
             },
             "visualize": False,
@@ -218,18 +222,31 @@ def post_optimization(
         },
         "visualize": False,
         "evaluation": False,
-        "refine_iter_n_times": 2,
+        "refine_iter_n_times":4,
         "model_refiner_no_filter_pts": False,
         "first_iter_resize_img_to_half": False,
         "enable_update_reproj_kpts_to_model": False,
         "enable_adaptive_downscale_window": True, # Down scale searching window size after each iteration, e.g., 15->11->7
         "incremental_refiner_filter_thresholds": [3, 2, 1.5],
-        "incremental_refiner_use_pba": False, # NOTE: pba does not allow share intrins or fix extrinsics, and only allow simple_radial camer model
         "enable_multiple_models": False,
+    }
+
+    colmap_configs = {
+        "ImageReader_camera_mode": 'auto',
+        "ImageReader_single_camera": False,
+        "min_model_size": 3,
+        "no_refine_intrinsics": False,
+        "n_threads": 1,
+        "reregistration": {
+            "abs_pose_max_error": 12,
+            "abs_pose_min_num_inliers": 30,
+            "abs_pose_min_inlier_ratio": 0.25,
+            "filter_max_reproj_error": 5,
+            "colmap_mapper_cfgs": None
+        }
     }
     
     cfgs['coarse_colmap_data']['img_preload'] = img_preload
-    cfgs['incremental_refiner_use_pba'] = colmap_configs["use_pba"]
     cfgs['multiview_matcher_data']['chunk'] = chunk_size
 
     # Link images to temp directory for later extract colors.
@@ -238,7 +255,7 @@ def post_optimization(
         os.system(f"rm -rf {temp_image_path}")
     os.makedirs(temp_image_path)
     for img_path in image_lists:
-        os.system(f"ln -s {img_path} {osp.join(temp_image_path, osp.basename(img_path))}")
+        os.system(f"ln -s {image_dir/img_path} {osp.join(temp_image_path, img_path)}")
 
     # Clear all previous results:
     temp_refined_dirs = [dir_name for dir_name in os.listdir(osp.dirname(refined_model_save_dir)) if 'model_refined' in dir_name or osp.basename(refined_model_save_dir) == dir_name]
@@ -257,11 +274,11 @@ def post_optimization(
         # Construct scene data
         colmap_image_dataset = CoarseColmapDataset(
             cfgs["coarse_colmap_data"],
+            image_dir,
             image_lists,
             covis_pairs_pth,
             colmap_coarse_dir if i == 0 else last_model_dir,
             refined_model_save_dir,
-            only_basename_in_colmap=only_basename_in_colmap,
             vis_path=vis3d_pth if vis3d_pth is not None else None,
             verbose=verbose
         )
@@ -280,20 +297,17 @@ def post_optimization(
             return state, None, None
 
         # Fine level match
-        save_path = osp.join(match_out_pth.rsplit("/", 2)[0], "fine_matches.pkl")
+        save_path = match_out_pth.parent / "fine_matches.pkl"
         if not osp.exists(save_path) or cfgs["fine_match_debug"]:
             print(f"Multi-view refinement matching begin!")
-            model_idx = 0 if i == 0 else 1
             rewindow_size_factor = i * 2
             fine_match_results = multiview_matcher(
                 cfgs["fine_matcher"],
                 cfgs["multiview_matcher_data"],
                 colmap_image_dataset,
                 rewindow_size_factor=rewindow_size_factor if cfgs["enable_adaptive_downscale_window"] else None,
-                model_idx= None,
+                model_idx=None,
                 visualize_dir=visualize_dir,
-                use_ray=fine_match_use_ray,
-                ray_cfg=ray_cfg,
                 verbose=verbose
             )
         else:
@@ -314,14 +328,14 @@ def post_optimization(
         if i == 0:
             if osp.exists(osp.join(colmap_refined_kpts_dir, 'database.db')):
                 os.system(f"rm -rf {osp.join(colmap_refined_kpts_dir, 'database.db')}")
-            os.system(f"cp {osp.join(osp.dirname(colmap_coarse_dir), 'database.db')} {osp.join(colmap_refined_kpts_dir, 'database.db')}")
+            os.system(f"cp {osp.join(colmap_coarse_dir, 'database.db')} {osp.join(colmap_refined_kpts_dir, 'database.db')}")
             fix_farest_images(reconstructed_model_dir=colmap_coarse_dir, output_path=osp.join(colmap_refined_kpts_dir, 'fixed_images.txt'))
 
         colmap_image_dataset.save_colmap_model(osp.join(colmap_refined_kpts_dir, 'model'))
 
         # Refinement:
         filter_threshold = cfgs['incremental_refiner_filter_thresholds'][i] if i < len(cfgs['incremental_refiner_filter_thresholds'])-1 else cfgs['incremental_refiner_filter_thresholds'][-1]
-        success = sfm_model_geometry_refiner.main(colmap_refined_kpts_dir, current_model_dir, no_filter_pts=cfgs["model_refiner_no_filter_pts"], colmap_configs=colmap_configs, image_path=temp_image_path, verbose=verbose, filter_threshold=filter_threshold)
+        success = sfm_model_geometry_refiner.main(colmap_refined_kpts_dir, current_model_dir, colmap_configs=colmap_configs, image_path=temp_image_path, verbose=verbose, filter_threshold=filter_threshold)
 
         if not success:
             # Refine failed scenario, use the coarse model instead.
@@ -329,7 +343,7 @@ def post_optimization(
 
         os.system(f"rm -rf {osp.join(colmap_refined_kpts_dir, 'model')}")
         os.makedirs(osp.join(colmap_refined_kpts_dir, 'model'), exist_ok=True)
-        os.system(f"cp {current_model_dir+'/*'} {osp.join(colmap_refined_kpts_dir, 'model')}")
+        os.system(f"cp {str(current_model_dir)+'/*'} {osp.join(colmap_refined_kpts_dir, 'model')}")
 
         # Re-registration:
         if i % 2 == 0:
@@ -446,7 +460,7 @@ for dataset, predictions in samples.items():
 
     print(f'Images dir: {images_dir}')
 
-    image_names = [p.filename for p in predictions]
+    image_names = [p.filename for p in predictions if p.filename.startswith("another_")]
     if max_images is not None:
         image_names = image_names[:max_images]
 
@@ -468,104 +482,64 @@ for dataset, predictions in samples.items():
     features = workdir / dataset / "features.h5"
     matches = workdir / dataset / "matches.h5"
     sfm_dir = workdir / dataset / "sfm"
-    feature_conf = extract_features.confs["disk"]
-    matcher_conf = match_features.confs["disk+lightglue"]
-
+    # feature_conf = extract_features.confs["disk"]
+    # matcher_conf = match_features.confs["disk+lightglue"]
     # extract_features.main(feature_conf, images_dir, image_list=image_names, feature_path=features)
     # match_features.main(matcher_conf, sfm_pairs, features=features, matches=matches)
-    # clusters_dict = lightglue_find_cluster(sfm_pairs, matches, images_dir, image_names, min_match_score=0.3)
+    matcher_conf = match_dense.confs["roma"]
+    features, matches = match_dense.main(
+        matcher_conf, sfm_pairs, images_dir, workdir / dataset,
+    )
+    mapper_options = {"min_model_size" : 5,
+                      "max_num_models": 100, 
+                      "num_threads": 1
+    }
+    max_map, maps = reconstruction.main(
+        sfm_dir,
+        images_dir,
+        sfm_pairs,
+        features=features,
+        matches=matches,
+        image_list=sorted_image_names,
+        min_match_score=0.08,
+        skip_geometric_verification=False,
+        mapper_options = mapper_options
+    )
 
-    ## then we use mast
-    mast_cache_path = workdir / dataset / "mast_cache"
-    os.makedirs(mast_cache_path, exist_ok=True)
-    images, image_name_dict = scene_prepare_images(images_dir, 224, patch_size, image_names)
-    clusters_dict = mast_find_cluster(mast_cache_path, mast_model, images, image_name_dict,
-                                       device, sfm_pairs, subsample=8, conf_thr=0.7, half=half, pixel_tol=0)
-
+    post_opt_model_refined = sfm_dir/ "model_refined"
+    post_optimization(images_dir, sorted_image_names, sfm_pairs, sfm_dir, post_opt_model_refined, matches)
     
-    shutil.rmtree(mast_cache_path)
     
+    final_colmap_images = read_images_binary(post_opt_model_refined /  "images.bin")
+    final_colmap_3ds = read_points3d_binary(post_opt_model_refined / "points3D.bin")
+    final_colmap_cameras = read_cameras_binary(post_opt_model_refined / "cameras.bin")
+                
 
     filename_to_prdictions_index = {p.filename: idx for idx, p in enumerate(predictions)}
 
     registered = 0
     prediction_cluster_index = 0
-    for cluster_id, image_cluster_dict in clusters_dict.items():
-        print(f'cluster {cluster_id}:')
-        for img_name in image_cluster_dict["names"]:
-            print(f'-- {img_name}')
-        
-        if len(image_cluster_dict["filelist"]) < 4:
-            print(f'-- outlier clusters {image_cluster_dict["filelist"]}')
-            continue
-
-        image_names_cluster = image_cluster_dict["filelist"]
-
-        cluster_dir_name = f"cluster_{prediction_cluster_index}"
-        os.makedirs(workdir / dataset / cluster_dir_name, exist_ok=True)
-        clus_sfm_pairs = workdir / dataset / cluster_dir_name / "clu-pairs-sfm.txt"
-        make_complete_paris(clus_sfm_pairs, image_names_cluster)
-
-        clus_sfm_dir = workdir / dataset / cluster_dir_name / "sfm"
-        os.makedirs(clus_sfm_dir, exist_ok=True)
+    for index, image in final_colmap_images.items():
+        prediction_index = filename_to_prdictions_index[image.name]
+        predictions[prediction_index].cluster_index = prediction_cluster_index
+        predictions[prediction_index].rotation = deepcopy(image.qvec2rotmat())
+        predictions[prediction_index].translation = deepcopy(image.tvec)
+        registered += 1
 
 
-        print(f"starting constructing {dataset} with images {image_names_cluster}")
+    # for index, image in max_map.images.items():
+    #     prediction_index = filename_to_prdictions_index[image.name]
+    #     predictions[prediction_index].cluster_index = prediction_cluster_index
+    #     predictions[prediction_index].rotation = deepcopy(image.cam_from_world.rotation.matrix())
+    #     predictions[prediction_index].translation = deepcopy(image.cam_from_world.translation)
+    #     registered += 1
 
-        # lightglue
-        clus_features = workdir / dataset / cluster_dir_name / "features.h5"
-        clus_matches = workdir / dataset / cluster_dir_name / "matches.h5"
-        extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=clus_features)
-        match_features.main(matcher_conf, clus_sfm_pairs, features=clus_features, matches=clus_matches)
-        mapper_options = {"min_model_size": 3, "max_num_models": 100}
-        colmap_db_path, matches_size = hloc_reconstruction(clus_sfm_dir, images_dir, clus_sfm_pairs, clus_features, clus_matches,
-                                            image_list=image_names_cluster, min_match_score=0.1,
-                                            mapper_options = mapper_options)
+    prediction_cluster_index += 1
+    mapping_result_str = f'Dataset "{dataset}" -> Registered {registered} / {len(image_names)} images with {len(max_map.images)} clusters'
+    print(mapping_result_str)
 
-        if matches_size < 5:
-            print(f'-- too few matches {matches_size}')
-            continue
-
-        ## mast
-        # images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
-        # colmap_db_path = sfm_dir / "colmap.db"
-        # create_empty_db(colmap_db_path)
-        # image_to_colmap = import_images_and_cameras(images_dir, colmap_db_path, pycolmap.CameraMode.AUTO,
-        #                                              image_list=image_names_cluster, image_path_to_idx=image_name_dict)
-        # colmap_image_pairs = run_mast_match_cluster(mast_cache_path, mast_model, images, image_names_cluster,
-        #                                              image_name_dict, image_to_colmap, colmap_db_path,
-        #                                              device, sfm_pairs, conf_thr=1.001, half=half, pixel_tol=0,
-        #                                              min_len_track=2, skip_geometric_verification=False)
-        # if len(colmap_image_pairs) == 0:
-        #     continue
-
-        time.sleep(4)
-
-        print("verifying matches")
-        reconstruction_path = clus_sfm_dir / "reconstruction"
-        # pycolmap.verify_matches(colmap_db_path, clus_sfm_pairs)
-        glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
-        max_map = pycolmap.Reconstruction(reconstruction_path / "0")
-        print(max_map.summary())
-
-        for index, image in max_map.images.items():
-            prediction_index = filename_to_prdictions_index[image.name]
-            predictions[prediction_index].cluster_index = prediction_cluster_index
-            predictions[prediction_index].rotation = deepcopy(image.cam_from_world.rotation.matrix())
-            predictions[prediction_index].translation = deepcopy(image.cam_from_world.translation)
-            registered += 1
-
-        for image_name in image_names_cluster:
-            prediction_index = filename_to_prdictions_index[image_name]
-            if predictions[prediction_index].cluster_index is None:
-                predictions[prediction_index].cluster_index = prediction_cluster_index
-
-        prediction_cluster_index += 1
-        mapping_result_str = f'Dataset "{dataset}" -> Registered {registered} / {len(image_names)} images with {len(max_map.images)} clusters'
-        print(mapping_result_str)
-
-        gc.collect()
-        time.sleep(1)
+    gc.collect()
+    time.sleep(1)
 
 
 

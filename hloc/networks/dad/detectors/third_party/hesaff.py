@@ -2,8 +2,8 @@ from PIL import Image
 
 import torch
 
-from dad.utils import get_best_device
-from dad.types import Detector
+from hloc.networks.dad.utils import get_best_device
+from hloc.networks.dad.types import Detector
 
 
 class HesAff(Detector):
