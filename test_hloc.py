@@ -145,9 +145,9 @@ if is_train:
     datasets_to_process = [
     	# New data.
     	# 'amy_gardens',
-    	# 'ETs',
+    	'ETs',
     	# 'fbk_vineyard',
-    	'stairs',
+    	# 'stairs',
     	# Data from IMC 2023 and 2024.
     	# 'imc2024_dioscuri_baalshamin',
     	# 'imc2023_theather_imc2024_church',
@@ -507,6 +507,27 @@ def scene_prepare_images(root, maxdim, patch_size, image_paths):
         image_name_dict[image_paths[idx]] = idx
     return images, image_name_dict
 
+
+def can_unoin(a, b, distace_matrix, threshold = 3):
+    simular_num = 0
+    for i in a:
+        for j in b:
+            if i == j:
+                simular_num += 1
+    if simular_num > threshold:
+        return True
+
+
+def try_union(clusters_list, distace_matrix, threshold = 3):
+    for i in range(len(clusters_list)):
+        for j in range(i+1, len(clusters_list)):
+            if can_unoin(clusters_list[i], clusters_list[j], distace_matrix):
+                return (i, j)
+            
+    
+    return ()
+    
+
 def find_cluster(distance_matrix, name_list, show_dendrogram = False):
     # Compute the condensed distance matrix
     condensed_distance_matrix = sch.distance.squareform(distance_matrix)
@@ -528,24 +549,32 @@ def find_cluster(distance_matrix, name_list, show_dendrogram = False):
         sch.dendrogram(Z, leaf_rotation=90., leaf_font_size=5, labels=names)
         plt.show()
 
-    import scipy
-    xx = [22, 54, 76, 209] 
-    yy = [3, 7, 12, 14]
-    # Perform curve fitting
-    params, covariance = scipy.optimize.curve_fit(lambda t, a, b: a + b * np.log(t), xx, yy)
-    a, b = params  # Unpack the parameters
-    def ff(x):
-        return a + b * np.log(x)
-    tt = ff(len(name_list))  
-    print("find cluster with similarity threshold = ", tt, " using curve fitting")
-    clusters = sch.fcluster(Z, t=tt, criterion='distance')
+    clusters = sch.fcluster(Z, t=5, criterion='distance')
     clusters_dict = {}
+
+    clusters_bucket = {}
+    
     print(f'clusters = {clusters}')
     for i, cluster in enumerate(clusters):
-        if cluster not in clusters_dict:
-            clusters_dict[cluster] = dict(names=[], filelist=[])
-        clusters_dict[cluster]["names"].append(name_list[i])
-        clusters_dict[cluster]["filelist"].append(name_list[i])
+        if cluster not in clusters_bucket:
+            clusters_bucket[cluster] = set()
+        clusters_bucket[cluster].add(i)
+
+        # if cluster not in clusters_dict:
+        #     clusters_dict[cluster] = dict(names=[], filelist=[])
+        # clusters_dict[cluster]["names"].append(name_list[i])
+        # clusters_dict[cluster]["filelist"].append(name_list[i])
+
+    clusters_list = list(clusters_bucket.values())
+    clusters_list = sorted(clusters_list, key=len, reverse=True)
+
+    while True:
+        union = try_union(clusters_list, distance_matrix)
+        if union == ():
+            break
+        clusters_list[union[0]].update(clusters_list[union[1]])
+        clusters_list.pop(union[1])
+
     
     return clusters_dict
 
