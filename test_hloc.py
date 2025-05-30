@@ -1,3 +1,4 @@
+import check_orientation.pre_trained_models
 from mast3r.model import AsymmetricMASt3R
 import os
 import numpy as np
@@ -110,6 +111,23 @@ boq_model.eval()
 
 
 
+def create_ori_model(activation: Optional[str] = "softmax"):
+    from timm import create_model as timm_create_model
+    check_ori_model = timm_create_model("swsl_resnext50_32x4d", pretrained=False, num_classes=4)
+    check_ori_state_dict = torch.load("/kaggle/input/check-orientation-weight/2020-11-16_resnext50_32x4d.pth")["state_dict"]
+    check_ori_state_dict = rename_layers(check_ori_state_dict, {"model.": ""})
+    check_ori_model.load_state_dict(check_ori_state_dict)
+
+    if activation == "softmax":
+        return torch.nn.Sequential(check_ori_model, torch.nn.Softmax(dim=1))
+
+    return check_ori_model
+
+check_ori_model = create_ori_model()
+
+check_ori_model.eval()
+check_ori_model.to(device)
+
 
 @dataclasses.dataclass
 class Prediction:
@@ -145,7 +163,7 @@ if is_train:
     datasets_to_process = [
     	# New data.
     	# 'amy_gardens',
-    	'ETs',
+    	# 'ETs',
     	# 'fbk_vineyard',
     	# 'stairs',
     	# Data from IMC 2023 and 2024.
@@ -155,7 +173,7 @@ if is_train:
     	# 'imc2023_haiper',
     	# 'imc2024_lizard_pond',
     	# 'pt_stpeters_stpauls',
-    	# 'pt_brandenburg_british_buckingham',
+    	'pt_brandenburg_british_buckingham',
     	# 'pt_piazzasanmarco_grandplace',
     	# 'pt_sacrecoeur_trevi_tajmahal',
     ]
@@ -168,6 +186,42 @@ ratios_resolutions = {
 
 ImgNorm = tvf.Compose([tvf.ToTensor(), tvf.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
+
+import re
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+def rename_layers(state_dict: Dict[str, Any], rename_in_layers: Dict[str, Any]) -> Dict[str, Any]:
+    result = {}
+    for key, value in state_dict.items():
+        for key_r, value_r in rename_in_layers.items():
+            key = re.sub(key_r, value_r, key)
+
+        result[key] = value
+
+    return result
+
+def load_rgb(image_path: Union[Path, str], lib: str = "cv2") -> np.array:
+    """Load RGB image from path.
+
+    Args:
+        image_path: path to image
+        lib: library used to read an image.
+            currently supported `cv2` and `jpeg4py`
+
+    Returns: 3 channel array with RGB image
+
+    """
+    import cv2 
+    if Path(image_path).is_file():
+        if lib == "cv2":
+            image = cv2.imread(str(image_path))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        else:
+            raise NotImplementedError("Only cv2 are supported.")
+        return image
+
+    raise FileNotFoundError(f"File not found {image_path}")
 
 def get_HW_resolution(H, W, maxdim, patchsize=16):
     assert maxdim in ratios_resolutions, "Error, maxdim can only be 224 or 512 for now. Other maxdims not implemented yet."
@@ -247,14 +301,17 @@ def boq_make_pairs(sfm_pairs_path, boq_topks, image_list):
         f.write("\n".join(" ".join([i, j]) for i, j in pairs_name))
 
 
-def make_complete_paris(sfm_pairs_path, image_list):
+def make_cluster_paris(sfm_pairs_path, image_list, distance_matrix, image_name_dict):
     pairs_name = []
     for i in range(len(image_list)):
         for j in range(i + 1, len(image_list)):
-            pairs_name.append((image_list[i], image_list[j]))
-    print(f"Found {len(pairs_name)} pairs.")
+            if distance_matrix[image_name_dict[image_list[i]], image_name_dict[image_list[j]]] < 2.2:
+                pairs_name.append((image_list[i], image_list[j]))
+                print(f"Found {len(pairs_name)} pairs.")
     with open(sfm_pairs_path, "w") as f:
         f.write("\n".join(" ".join([i, j]) for i, j in pairs_name))
+
+    return len(pairs_name)
 
 
 @torch.no_grad()
@@ -508,23 +565,31 @@ def scene_prepare_images(root, maxdim, patch_size, image_paths):
     return images, image_name_dict
 
 
-def can_unoin(a, b, distace_matrix, threshold = 3):
+def can_unoin(a, b, distance_matrix, distance_th = 3.1, min_simular_num = 4, verbose=False):
     simular_num = 0
     for i in a:
         for j in b:
-            if i == j:
+            if verbose:
+                print(f"Checking distance between {i} and {j}: {distance_matrix[i, j]}")
+            if distance_matrix[i, j] < 1.1:
+                simular_num += 4
+            elif distance_matrix[i, j] < 2.1:
+                simular_num += 2
+            elif distance_matrix[i, j] < distance_th:
                 simular_num += 1
-    if simular_num > threshold:
+
+    if simular_num >= min_simular_num:
         return True
+    else:
+        return False
 
 
-def try_union(clusters_list, distace_matrix, threshold = 3):
+def try_union(clusters_list, distance_matrix):
     for i in range(len(clusters_list)):
         for j in range(i+1, len(clusters_list)):
-            if can_unoin(clusters_list[i], clusters_list[j], distace_matrix):
+            if can_unoin(clusters_list[i], clusters_list[j], distance_matrix):
                 return (i, j)
-            
-    
+
     return ()
     
 
@@ -560,11 +625,6 @@ def find_cluster(distance_matrix, name_list, show_dendrogram = False):
             clusters_bucket[cluster] = set()
         clusters_bucket[cluster].add(i)
 
-        # if cluster not in clusters_dict:
-        #     clusters_dict[cluster] = dict(names=[], filelist=[])
-        # clusters_dict[cluster]["names"].append(name_list[i])
-        # clusters_dict[cluster]["filelist"].append(name_list[i])
-
     clusters_list = list(clusters_bucket.values())
     clusters_list = sorted(clusters_list, key=len, reverse=True)
 
@@ -575,6 +635,12 @@ def find_cluster(distance_matrix, name_list, show_dendrogram = False):
         clusters_list[union[0]].update(clusters_list[union[1]])
         clusters_list.pop(union[1])
 
+    clusters_list = filter(lambda x: len(x) > 8, clusters_list)     
+
+    for i, cluster in enumerate(clusters_list):
+        clusters_dict[i] = dict(names=[])
+        for idx in cluster:
+            clusters_dict[i]["names"].append(name_list[idx])
     
     return clusters_dict
 
@@ -614,7 +680,7 @@ def mast_find_cluster(cache_path, mast_model, images, image_name_dict,
 
     print("-------------------------mean of distance_matrix: ", distance_matrix.mean(), "-------------------------")
 
-    return clusters_dict
+    return clusters_dict, distance_matrix
 
 
 def export_matches(colmap_db_path, images, image_to_colmap, im_keypoints, im_matches, min_len_track, skip_geometric_verification):
@@ -953,6 +1019,42 @@ def glomap_run_mapper(colmap_db_path, recon_path, image_root_path):
             f' {glomap_process.returncode} )')
 
 
+def tensor_from_rgb_image(image):
+    image = np.ascontiguousarray(np.transpose(image, (2, 0, 1)))
+    return torch.from_numpy(image)
+
+@torch.no_grad()
+def check_images_orientation(image_dir, new_dir, image_names):
+    """
+    Check if images are in the correct orientation.
+    If not, rotate them to the correct orientation.
+    """
+    import albumentations as albu
+    transform = albu.Compose([albu.Resize(height=224, width=224), albu.Normalize(p=1)], p=1)
+    images_ori = {}
+    for image_name in image_names:
+        image_path = os.path.join(image_dir, image_name)
+        image = load_rgb(image_path)
+        x = transform(image=image)["image"]
+        temp = [tensor_from_rgb_image(x).to(device)]
+        prediction = check_ori_model(torch.stack(temp)).cpu().numpy()
+        images_ori[image_name] = {}
+        images_ori[image_name]["pred"] = prediction[0]
+        index = np.argmax(prediction[0])
+        images_ori[image_name]["to_normal"] = -index * 90 if images_ori[image_name]["pred"][index] > 0.6 else 0
+        images_ori[image_name]["to_origin"] = -images_ori[image_name]["to_normal"]
+
+        ## rotate image
+        if images_ori[image_name]["to_normal"] != 0:
+            image = PIL.Image.open(image_path)
+            image = image.rotate(images_ori[image_name]["to_normal"], expand=True)
+            image.save(os.path.join(new_dir, image_name))
+        else:
+            shutil.copy(image_path, os.path.join(new_dir, image_name))
+    print(f'Orientation check completed for {len(images_ori)} images.')
+
+    return images_ori
+
 for dataset, predictions in samples.items():
     if datasets_to_process and dataset not in datasets_to_process:
         print(f'Skipping "{dataset}"')
@@ -977,7 +1079,13 @@ for dataset, predictions in samples.items():
 
     dataset_dir = os.path.join(workdir, dataset)
 
-    boq_topks = boq_sort_topk(images_dir, image_names, boq_model, device, vis=False, topk=40, half=half)
+    new_images_dir = os.path.join(dataset_dir, "rotate_images")
+    os.makedirs(new_images_dir, exist_ok=True)
+    images_ori = check_images_orientation(images_dir, new_images_dir, sorted_image_names)
+    images_dir = Path(new_images_dir)
+    image_names = sorted(os.listdir(images_dir))
+
+    boq_topks = boq_sort_topk(images_dir, image_names, boq_model, device, vis=False, topk=50, half=half)
     os.makedirs(dataset_dir, exist_ok=True)
     with open(os.path.join(dataset_dir, "boq_topk.json"), "w", encoding="utf-8") as f:
         json.dump(boq_topks, f, ensure_ascii=False, indent=4)
@@ -1000,11 +1108,11 @@ for dataset, predictions in samples.items():
     mast_cache_path = workdir / dataset / "mast_cache"
     os.makedirs(mast_cache_path, exist_ok=True)
     images, image_name_dict = scene_prepare_images(images_dir, 224, patch_size, image_names)
-    clusters_dict = mast_find_cluster(mast_cache_path, mast_model, images, image_name_dict,
+    clusters_dict, distance_matrix = mast_find_cluster(mast_cache_path, mast_model, images, image_name_dict,
                                        device, sfm_pairs, subsample=8, conf_thr=0.7, half=half, pixel_tol=0)
 
     
-    shutil.rmtree(mast_cache_path)
+    # shutil.rmtree(mast_cache_path)
     
 
     filename_to_prdictions_index = {p.filename: idx for idx, p in enumerate(predictions)}
@@ -1016,16 +1124,19 @@ for dataset, predictions in samples.items():
         for img_name in image_cluster_dict["names"]:
             print(f'-- {img_name}')
         
-        if len(image_cluster_dict["filelist"]) < 4:
-            print(f'-- outlier clusters {image_cluster_dict["filelist"]}')
+        if len(image_cluster_dict["names"]) < 4:
+            print(f'-- outlier clusters {image_cluster_dict["names"]}')
             continue
         
-        image_names_cluster = image_cluster_dict["filelist"]
+        image_names_cluster = image_cluster_dict["names"]
 
         cluster_dir_name = f"cluster_{prediction_cluster_index}"
         os.makedirs(workdir / dataset / cluster_dir_name, exist_ok=True)
         clus_sfm_pairs = workdir / dataset / cluster_dir_name / "clu-pairs-sfm.txt"
-        make_complete_paris(clus_sfm_pairs, image_names_cluster)
+        clus_pair_len = make_cluster_paris(clus_sfm_pairs, image_names_cluster, distance_matrix, image_name_dict)
+        if clus_pair_len < 28:
+            print(f'-- outlier clusters {image_cluster_dict["names"]}')
+            continue
 
         clus_sfm_dir = workdir / dataset / cluster_dir_name / "sfm"
         os.makedirs(clus_sfm_dir, exist_ok=True)
@@ -1038,42 +1149,39 @@ for dataset, predictions in samples.items():
         clus_matches = workdir / dataset / cluster_dir_name / "matches.h5"
         extract_features.main(feature_conf, images_dir, image_list=image_names_cluster, feature_path=clus_features)
         match_features.main(matcher_conf, clus_sfm_pairs, features=clus_features, matches=clus_matches)
-        mapper_options = {"min_model_size": 3, "max_num_models": 100}
-        colmap_db_path, matches_size = hloc_reconstruction(clus_sfm_dir, images_dir, clus_sfm_pairs, clus_features, clus_matches,
-                                            image_list=image_names_cluster, min_match_score=0.04,
-                                            mapper_options = mapper_options)
-
-        if matches_size < 5:
-            print(f'-- too few matches {matches_size}')
-            continue
-
-        ## mast
-        # images, image_name_dict = scene_prepare_images(images_dir, image_size, patch_size, image_names_cluster)
-        # colmap_db_path = sfm_dir / "colmap.db"
-        # create_empty_db(colmap_db_path)
-        # image_to_colmap = import_images_and_cameras(images_dir, colmap_db_path, pycolmap.CameraMode.AUTO,
-        #                                              image_list=image_names_cluster, image_path_to_idx=image_name_dict)
-        # colmap_image_pairs = run_mast_match_cluster(mast_cache_path, mast_model, images, image_names_cluster,
-        #                                              image_name_dict, image_to_colmap, colmap_db_path,
-        #                                              device, sfm_pairs, conf_thr=1.001, half=half, pixel_tol=0,
-        #                                              min_len_track=2, skip_geometric_verification=False)
-        # if len(colmap_image_pairs) == 0:
-        #     continue
-
-        time.sleep(4)
-
-        print("verifying matches")
-        reconstruction_path = clus_sfm_dir / "reconstruction"
-        # pycolmap.verify_matches(colmap_db_path, clus_sfm_pairs)
-        glomap_run_mapper(colmap_db_path, reconstruction_path, images_dir)
-        max_map = pycolmap.Reconstruction(reconstruction_path / "0")
-        print(max_map.summary())
+        mapper_options = {"min_model_size" : 5,
+                          "max_num_models": 80, 
+                          "num_threads": 1
+        }
+        max_map, maps = reconstruction.main(
+            clus_sfm_dir,
+            images_dir,
+            clus_sfm_pairs,
+            features=clus_features,
+            matches=clus_matches,
+            image_list=image_names_cluster,
+            min_match_score=0.07,
+            skip_geometric_verification=True,
+            mapper_options = mapper_options
+        )
 
         for index, image in max_map.images.items():
             prediction_index = filename_to_prdictions_index[image.name]
             predictions[prediction_index].cluster_index = prediction_cluster_index
-            predictions[prediction_index].rotation = deepcopy(image.cam_from_world.rotation.matrix())
-            predictions[prediction_index].translation = deepcopy(image.cam_from_world.translation)
+            rotation = deepcopy(image.cam_from_world.rotation.matrix())
+            translation = deepcopy(image.cam_from_world.translation)
+            # if images_ori[image.name]["to_normal"] != 0:
+            #     tf_c_w = np.eye(4)
+            #     tf_c_w[:3, :3] = rotation
+            #     tf_c_w[:3, 3] = translation
+            #     tf_w_c = np.linalg.inv(tf_c_w)
+            #     tf_w_c[:3, :3] = tf_w_c[:3, :3] @ Rotation.from_euler('z', -images_ori[image.name]["to_normal"], degrees=True).as_matrix() 
+            #     tf_c_w = np.linalg.inv(tf_w_c)
+            #     rotation = tf_w_c[:3, :3]
+            #     translation = tf_w_c[:3, 3]
+                
+            predictions[prediction_index].rotation = rotation
+            predictions[prediction_index].translation = translation
             registered += 1
 
         for image_name in image_names_cluster:
