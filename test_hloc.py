@@ -1,4 +1,3 @@
-import check_orientation.pre_trained_models
 from mast3r.model import AsymmetricMASt3R
 import os
 import numpy as np
